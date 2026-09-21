@@ -34,6 +34,7 @@ formats.
   - [JSON decode options](#json-decode-options)
   - [JSON encode options](#json-encode-options)
   - [jq filter support](#jq-filter-support)
+  - [Elixir Protocol Support](#elixir-protocol-support)
   - [Elixir's Phoenix `json_library()` compliance](#elixirs-phoenix-json_library-compliance)
   - [API](#api)
   - [Benchmarking JSON](#benchmarking-json)
@@ -481,6 +482,84 @@ If `libjq` was not available at build time, `query/2,3` returns
 `{error, jq_not_available}`. Build detection is automatic — `make` probes
 for `jq.h`/`libjq` and only enables this feature if found, so `glazer`
 still builds and works without `libjq` installed.
+
+### [Elixir Protocol Support](#table-of-contents)
+
+`glazer_json` can serve as the backend for Elixir protocol implementations,
+such as `Jason.Encoder` or custom protocols. This allows Elixir users to
+filter struct fields at compile-time using the `@derive` annotation.
+
+#### Using with `Jason.Encoder`
+
+Elixir users can create a wrapper module in their project that derives
+`Jason.Encoder` and uses `glazer_json:encode/2` as the backend:
+
+```elixir
+# lib/my_app/glazer_encoder.ex
+defimpl Jason.Encoder, for: Any do
+  defmacro __deriving__(module, struct, opts) do
+    fields = fields_to_encode(struct, opts)
+
+    quote do
+      defimpl Jason.Encoder, for: unquote(module) do
+        def encode(value, _opts) do
+          filtered = Map.take(value, unquote(fields))
+          :glazer_json.encode(filtered, [use_nil])
+        end
+      end
+    end
+  end
+
+  defp fields_to_encode(struct, opts) do
+    all_fields = Map.keys(struct) -- [:__struct__]
+
+    cond do
+      only = Keyword.get(opts, :only) -> only
+      except = Keyword.get(opts, :except) -> all_fields -- except
+      true -> all_fields
+    end
+  end
+end
+```
+
+Then use `@derive` in your Ecto schema:
+
+```elixir
+defmodule MyApp.GustSecrets do
+  use Ecto.Schema
+
+  @derive {Jason.Encoder, only: [:id, :name, :value_type, :inserted_at, :updated_at]}
+  schema "gust_secrets" do
+    field :name, :string
+    field :value, Gust.Encrypted.Binary, redact: true
+    field :value_type, Ecto.Enum, values: [:string, :json]
+
+    timestamps()
+  end
+end
+```
+
+This ensures that only the specified fields are encoded to JSON, with the
+sensitive `:value` field automatically excluded.
+
+#### Why this works
+
+- **Compile-time filtering**: The `@derive` annotation uses the `__deriving__`
+  macro to generate field-filtering code at compile time, with zero runtime cost
+- **Zero-copy protocol dispatch**: Elixir's protocol system ensures the correct
+  `encode/2` implementation is called at runtime
+- **Erlang backend**: `glazer_json:encode/2` provides the fast NIF-based JSON
+  encoding, significantly faster than pure-Elixir implementations
+
+#### API functions for protocol implementations
+
+The following functions are explicitly named to match protocol conventions:
+
+- `encode_to_iodata/1` - encode a term to JSON iodata (identical to `encode/1`)
+- `encode_to_iodata/2` - encode a term to JSON iodata with options (identical to `encode/2`)
+
+These are aliases for discoverability; they help protocol wrapper code match
+the naming convention used in `Jason.Encoder` and similar frameworks.
 
 ### [Elixir's Phoenix `json_library()` compliance](#table-of-contents)
 

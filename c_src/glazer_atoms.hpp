@@ -40,6 +40,7 @@ static ERL_NIF_TERM AM_ESCAPE_FWD_SLASH;
 static ERL_NIF_TERM AM_YAML_1_1_BOOLS;
 
 // CSV option atoms
+static ERL_NIF_TERM AM_BADARG;
 static ERL_NIF_TERM AM_BINARY;
 static ERL_NIF_TERM AM_BOOLEAN;
 static ERL_NIF_TERM AM_CHARLIST;
@@ -108,88 +109,78 @@ struct DeadProcError : public std::exception {};
 
 inline void init_atoms(ErlNifEnv* env)
 {
-  AM_OK                        = enif_make_atom(env, "ok");
-  AM_ERROR                     = enif_make_atom(env, "error");
-  AM_TRUE                      = enif_make_atom(env, "true");
-  AM_FALSE                     = enif_make_atom(env, "false");
-  AM_NULL                      = enif_make_atom(env, "null");
-  AM_NIL                       = enif_make_atom(env, "nil");
-  AM_ENOMEM                    = enif_make_atom(env, "enomem");
-
-  AM_OBJECT_AS_TUPLE           = enif_make_atom(env, "object_as_tuple");
-  AM_USE_NIL                   = enif_make_atom(env, "use_nil");
-  AM_NULL_TERM                 = enif_make_atom(env, "null_term");
-  AM_KEYS                      = enif_make_atom(env, "keys");
-  AM_LABEL_BINARY              = enif_make_atom(env, "binary");
-  AM_DEDUPE_KEYS               = enif_make_atom(env, "dedupe_keys");
-  AM_COPY_STRINGS              = enif_make_atom(env, "copy_strings");
-  AM_RETURN_TRAILER            = enif_make_atom(env, "return_trailer");
-  AM_VALIDATE_UTF8             = enif_make_atom(env, "validate_utf8");
-  AM_SKIP_UTF8_VALIDATION      = enif_make_atom(env, "skip_utf8_validation");
-  AM_HAS_TRAILER               = enif_make_atom(env, "has_trailer");
-
-  AM_PRETTY                    = enif_make_atom(env, "pretty");
-  AM_UESCAPE                   = enif_make_atom(env, "uescape");
-  AM_FORCE_UTF8                = enif_make_atom(env, "force_utf8");
-  AM_ESCAPE_FWD_SLASH          = enif_make_atom(env, "escape_fwd_slash");
-
-  AM_YAML_1_1_BOOLS            = enif_make_atom(env, "yaml_1_1_bools");
-
-  AM_DELIMITER                 = enif_make_atom(env, "delimiter");
-  AM_HEADERS                   = enif_make_atom(env, "headers");
-  AM_DATA                      = enif_make_atom(env, "data");
-  AM_RETURN                    = enif_make_atom(env, "return");
-  AM_MAP                       = enif_make_atom(env, "map");
-  AM_LIST                      = enif_make_atom(env, "list");
-  AM_TUPLE                     = enif_make_atom(env, "tuple");
-  AM_STRING                    = enif_make_atom(env, "string");
-  AM_SKIP                      = enif_make_atom(env, "skip");
-  AM_LIMIT                     = enif_make_atom(env, "limit");
-  AM_LINE_ENDING               = enif_make_atom(env, "line_ending");
-  AM_LF                        = enif_make_atom(env, "lf");
-  AM_CRLF                      = enif_make_atom(env, "crlf");
-  AM_FIELDS                    = enif_make_atom(env, "fields");
-  AM_INTEGER                   = enif_make_atom(env, "integer");
-  AM_FLOAT                     = enif_make_atom(env, "float");
-  AM_BOOLEAN                   = enif_make_atom(env, "boolean");
-  AM_DATETIME                  = enif_make_atom(env, "datetime");
-  AM_BINARY                    = enif_make_atom(env, "binary");
-  AM_CHARLIST                  = enif_make_atom(env, "charlist");
-  AM_EXISTING_ATOM             = enif_make_atom(env, "existing_atom");
+  AM_APP_VERSION               = enif_make_atom(env, "app_version");
   AM_ATOM                      = enif_make_atom(env, "atom");
-  AM_TYPE                      = enif_make_atom(env, "type");
-  AM_DEFAULT                   = enif_make_atom(env, "default");
-  AM_ON_FAILURE                = enif_make_atom(env, "on_failure");
-  AM_RAISE                     = enif_make_atom(env, "raise");
-
-  AM_INFINITY                  = enif_make_atom(env, "infinity");
-  AM_NEG_INFINITY              = enif_make_atom(env, "neg_infinity");
-  AM_NAN                       = enif_make_atom(env, "nan");
-
-  AM_ENCODE_ERROR              = enif_make_atom(env, "encode_error");
-  AM_INVALID_NUMBER_FORMAT     = enif_make_atom(env, "invalid_number_format");
-  AM_INVALID_INPUT             = enif_make_atom(env, "invalid_input");
-
+  AM_BADARG                    = enif_make_atom(env, "badarg");
+  AM_BINARY                    = enif_make_atom(env, "binary");
+  AM_BOOLEAN                   = enif_make_atom(env, "boolean");
+  AM_CHARLIST                  = enif_make_atom(env, "charlist");
   AM_COMPLETE                  = enif_make_atom(env, "complete");
-  AM_INCOMPLETE                = enif_make_atom(env, "incomplete");
-
+  AM_COPY_STRINGS              = enif_make_atom(env, "copy_strings");
+  AM_CRLF                      = enif_make_atom(env, "crlf");
+  AM_DATA                      = enif_make_atom(env, "data");
+  AM_DATETIME                  = enif_make_atom(env, "datetime");
+  AM_DEDUPE_KEYS               = enif_make_atom(env, "dedupe_keys");
+  AM_DEFAULT                   = enif_make_atom(env, "default");
+  AM_DELIMITER                 = enif_make_atom(env, "delimiter");
   AM_DUPLICATE_HEADER          = enif_make_atom(env, "duplicate_header");
-  AM_UNTERMINATED_QUOTED_FIELD = enif_make_atom(env, "unterminated_quoted_field");
+  AM_ENCODE_ERROR              = enif_make_atom(env, "encode_error");
+  AM_ENOMEM                    = enif_make_atom(env, "enomem");
+  AM_ERROR                     = enif_make_atom(env, "error");
+  AM_ESCAPE_FWD_SLASH          = enif_make_atom(env, "escape_fwd_slash");
+  AM_EXISTING_ATOM             = enif_make_atom(env, "existing_atom");
+  AM_FALSE                     = enif_make_atom(env, "false");
+  AM_FIELD                     = enif_make_atom(env, "field");
+  AM_FIELDS                    = enif_make_atom(env, "fields");
+  AM_FLOAT                     = enif_make_atom(env, "float");
+  AM_FORCE_UTF8                = enif_make_atom(env, "force_utf8");
+  AM_HAS_TRAILER               = enif_make_atom(env, "has_trailer");
+  AM_HEADERS                   = enif_make_atom(env, "headers");
+  AM_INCOMPLETE                = enif_make_atom(env, "incomplete");
+  AM_INDEX                     = enif_make_atom(env, "index");
+  AM_INFINITY                  = enif_make_atom(env, "infinity");
+  AM_INTEGER                   = enif_make_atom(env, "integer");
   AM_INVALID_FIELD_VALUE       = enif_make_atom(env, "invalid_field_value");
-
-  AM_JQ_NOT_AVAILABLE          = enif_make_atom(env, "jq_not_available");
+  AM_INVALID_INPUT             = enif_make_atom(env, "invalid_input");
+  AM_INVALID_NUMBER_FORMAT     = enif_make_atom(env, "invalid_number_format");
+  AM_INVALID_PATH              = enif_make_atom(env, "invalid_path");
+  AM_ITERATE                   = enif_make_atom(env, "iterate");
   AM_JQ_COMPILE_ERROR          = enif_make_atom(env, "jq_compile_error");
   AM_JQ_DECODE_ERROR           = enif_make_atom(env, "jq_decode_error");
-
-  AM_FIELD                     = enif_make_atom(env, "field");
-  AM_ITERATE                   = enif_make_atom(env, "iterate");
-  AM_INDEX                     = enif_make_atom(env, "index");
-  AM_INVALID_PATH              = enif_make_atom(env, "invalid_path");
-
-  AM_VERSION                   = enif_make_atom(env, "version");
-  AM_APP_VERSION               = enif_make_atom(env, "app_version");
-  AM_PGO                       = enif_make_atom(env, "pgo");
+  AM_JQ_NOT_AVAILABLE          = enif_make_atom(env, "jq_not_available");
+  AM_KEYS                      = enif_make_atom(env, "keys");
+  AM_LABEL_BINARY              = enif_make_atom(env, "binary");
+  AM_LF                        = enif_make_atom(env, "lf");
+  AM_LIMIT                     = enif_make_atom(env, "limit");
+  AM_LINE_ENDING               = enif_make_atom(env, "line_ending");
+  AM_LIST                      = enif_make_atom(env, "list");
+  AM_MAP                       = enif_make_atom(env, "map");
+  AM_NAN                       = enif_make_atom(env, "nan");
+  AM_NEG_INFINITY              = enif_make_atom(env, "neg_infinity");
+  AM_NIL                       = enif_make_atom(env, "nil");
+  AM_NULL                      = enif_make_atom(env, "null");
+  AM_NULL_TERM                 = enif_make_atom(env, "null_term");
+  AM_OBJECT_AS_TUPLE           = enif_make_atom(env, "object_as_tuple");
+  AM_OK                        = enif_make_atom(env, "ok");
+  AM_ON_FAILURE                = enif_make_atom(env, "on_failure");
   AM_OPTIMIZATION              = enif_make_atom(env, "optimization");
+  AM_PGO                       = enif_make_atom(env, "pgo");
+  AM_PRETTY                    = enif_make_atom(env, "pretty");
+  AM_RAISE                     = enif_make_atom(env, "raise");
+  AM_RETURN                    = enif_make_atom(env, "return");
+  AM_RETURN_TRAILER            = enif_make_atom(env, "return_trailer");
+  AM_SKIP                      = enif_make_atom(env, "skip");
+  AM_SKIP_UTF8_VALIDATION      = enif_make_atom(env, "skip_utf8_validation");
+  AM_STRING                    = enif_make_atom(env, "string");
+  AM_TRUE                      = enif_make_atom(env, "true");
+  AM_TUPLE                     = enif_make_atom(env, "tuple");
+  AM_TYPE                      = enif_make_atom(env, "type");
+  AM_UESCAPE                   = enif_make_atom(env, "uescape");
+  AM_UNTERMINATED_QUOTED_FIELD = enif_make_atom(env, "unterminated_quoted_field");
+  AM_USE_NIL                   = enif_make_atom(env, "use_nil");
+  AM_VALIDATE_UTF8             = enif_make_atom(env, "validate_utf8");
+  AM_VERSION                   = enif_make_atom(env, "version");
+  AM_YAML_1_1_BOOLS            = enif_make_atom(env, "yaml_1_1_bools");
 
   am_null                      = AM_NULL;
 }

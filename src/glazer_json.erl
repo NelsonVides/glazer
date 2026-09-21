@@ -22,14 +22,28 @@ application-wide, set the `null` env key in your config:
 - `query/2,3`: run a [jq](https://jqlang.org/) filter over a JSON
   document, returning decoded Erlang terms (requires `glazer` to be built
   with `libjq` available)
+
+## Elixir Protocol Support
+
+When used from Elixir, `glazer_json:encode/2` can serve as the backend for
+protocol implementations (e.g., `Jason.Encoder` or custom protocols). The
+`encode_to_iodata/1,2` functions explicitly document the iodata return type
+for use in protocol wrappers. See the README for an example of building a
+custom Elixir protocol on top of Glazer's Erlang encoding functions.
 """.
 -export([decode/1, decode/2, try_decode/1, try_decode/2,
-         encode/1, encode/2, encode_ndjson/1, encode_ndjson/2, minify/1, prettify/1,
+         encode/1, encode/2, try_encode/2,
+         encode_ndjson/1, encode_ndjson/2, minify/1, prettify/1,
          query/2, query/3,
          scan/1, scan/2,
          read_file/1, read_file/2, write_file/2, write_file/3,
          stream_decoder/0, stream_decoder/1, stream_feed/2, stream_eof/1,
-         'decode!'/1, 'encode!'/1, 'encode_to_iodata!'/1]).
+         'decode!'/1, 'encode!'/1, 'encode_to_iodata!'/1,
+         encode_to_iodata/1, encode_to_iodata/2]).
+
+-deprecated({'encode!', 1, "use Glazer.JSON.encode!/1 instead"}).
+-deprecated({'decode!', 1, "use Glazer.JSON.decode!/1 instead"}).
+-deprecated({'encode_to_iodata!', 1, "use Glazer.JSON.encode_to_iodata!/1 instead"}).
 
 -type decode_opt() ::
     object_as_tuple
@@ -313,6 +327,13 @@ encode(Data, Opts) ->
   glazer:json_encode(Data, Opts).
 
 -doc """
+Same as `encode/2`, but returns {ok, term()} | {error, term()}
+""".
+-spec try_encode(term(), encode_opts()) -> {ok, binary()} | {error, badarg | term()}.
+try_encode(Data, Opts) ->
+  glazer:json_try_encode(Data, Opts).
+
+-doc """
 Encode a list of Erlang terms to newline-delimited JSON (NDJSON), with one
 JSON value per line. Each value is encoded separately and followed by a newline.
 
@@ -392,6 +413,62 @@ cannot be encoded.
 -spec 'encode_to_iodata!'(term()) -> iodata().
 'encode_to_iodata!'(Data) ->
   encode(Data, [use_nil]).
+
+-doc """
+Encode an Erlang term to JSON iodata.
+
+This function is identical to `encode/1` but explicitly documents its return
+type as `iodata()` for discoverability in protocol implementations (e.g., Elixir's
+`Jason.Encoder`). Since `encode/1` already returns a binary (which is valid
+iodata), this is a zero-overhead alias.
+
+Raises `{encode_error, {Msg, Term}}` if `Data` contains a value that
+cannot be represented as JSON.
+
+This is particularly useful when integrating with Elixir protocol frameworks
+that expect an `encode_to_iodata/2` callback matching the `Jason.Encoder`
+interface.
+
+## Examples
+
+```erlang
+1> glazer_json:encode_to_iodata(#{<<"a">> => 1}).
+<<"{\"a\":1}">>
+
+2> glazer_json:encode_to_iodata(123).
+<<"123">>
+```
+""".
+-spec encode_to_iodata(term()) -> iodata().
+encode_to_iodata(Data) ->
+  encode(Data).
+
+-doc """
+Encode an Erlang term to JSON iodata with options.
+
+This function is identical to `encode/2` but explicitly documents its return
+type as `iodata()` for discoverability in protocol implementations (e.g., Elixir's
+`Jason.Encoder`). Since `encode/2` already returns a binary (which is valid
+iodata), this is a zero-overhead alias.
+
+Raises `{encode_error, {Msg, Term}}` if `Data` contains a value that
+cannot be represented as JSON.
+
+See `encode/2` for available options.
+
+## Examples
+
+```erlang
+1> glazer_json:encode_to_iodata(#{a => 1}, [pretty]).
+<<"{\n  \"a\": 1\n}">>
+
+2> glazer_json:encode_to_iodata(<<"héllo"/utf8>>, [uescape]).
+<<"\"h\\u00e9llo\"">>
+```
+""".
+-spec encode_to_iodata(term(), encode_opts()) -> iodata().
+encode_to_iodata(Data, Opts) ->
+  encode(Data, Opts).
 
 -doc """
 Minify a JSON binary or iolist, removing all unnecessary whitespace.

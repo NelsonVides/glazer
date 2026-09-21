@@ -3,18 +3,46 @@ defmodule Glazer.MixProject do
 
   def project do
     [
-      app:      :glazer,
-      version:  "0.1.0",
-      elixir:   "~> 1.15",
-      deps:     deps(),
-      aliases:  aliases(),
-      language: :erlang
+      app:                   :glazer,
+      version:               version(),
+      elixir:                "~> 1.15",
+      deps:                  deps(),
+      aliases:               aliases(),
+      language:              :erlang,
+      compilers:             [:elixir, :erlang, :app],
+      consolidate_protocols: consolidate_protocols(),
+      elixirc_paths:         elixirc_paths(Mix.env())
     ]
   end
 
   def application do
     [extra_applications: [:logger]]
   end
+
+  # Disable protocol consolidation in dev/test so @derive works properly for
+  # structs defined outside lib/ (e.g. in `mix run script.exs`, `mix run -e`,
+  # or `iex -S mix`) — consolidation freezes the known-implementations list
+  # at the end of `mix compile`, so anything @derive'd afterward would
+  # otherwise raise Protocol.UndefinedError despite having a real impl.
+  defp consolidate_protocols do
+    Mix.env() not in [:dev, :test]
+  end
+
+  # Read the version from src/glazer.app.src (the single source of truth,
+  # also used by rebar3/hex.pm for the Erlang-side release) instead of
+  # duplicating it here. `.app.src` is an Erlang term file, so it's parsed
+  # with `:file.consult/1` rather than as Elixir source.
+  defp version do
+    {:ok, [{:application, :glazer, opts}]} = :file.consult(~c"src/glazer.app.src")
+
+    opts
+    |> Keyword.fetch!(:vsn)
+    |> List.to_string()
+  end
+
+  # Compile benchmark tasks only in :bench environment
+  defp elixirc_paths(:bench), do: ["lib"]
+  defp elixirc_paths(_), do: ["lib/glazer"]
 
   # yaml_rustler pins {:rustler, "~> 0.34.0"} and {:rustler_precompiled, "~> 0.8.2"}
   # while rusty_csv pins {:rustler, "~> 0.37.3"} and {:rustler_precompiled, "~> 0.9"} —
@@ -26,6 +54,7 @@ defmodule Glazer.MixProject do
   # their precompiled NIFs correctly under rustler 0.37.3 / rustler_precompiled 0.9.
   defp deps do
     [
+      # Benchmarking dependencies
       {:simdjsone,           "~> 0.5",    only: :bench},
       {:jason,               "~> 1.4",    only: :bench},
       {:jiffy,               "~> 2.0.2",  only: :bench},

@@ -48,14 +48,14 @@ static constexpr size_t DIRTY_THRESHOLD = 8192;
 // NIF: json_decode
 //-----------------------------------------------------------------------------
 
-static ERL_NIF_TERM do_json_decode(ErlNifEnv* env, const ErlNifBinary& bin, int argc, const ERL_NIF_TERM argv[])
+static std::tuple<bool, ERL_NIF_TERM> do_json_try_decode(ErlNifEnv* env, const ErlNifBinary& bin, int argc, const ERL_NIF_TERM argv[])
 {
   JSONDecodeOpts opts;
   opts.null_term = am_null;
   if (argc == 2 && (!enif_is_list(env, argv[1]) || !parse_decode_opts(env, argv[1], opts)))
-    return enif_make_badarg(env);
+    return std::make_tuple(false, AM_BADARG);
   JSONDecoder dec(env, opts, reinterpret_cast<const char*>(bin.data), bin.size, argv[0]);
-  auto result = make_tuple(env, dec.decode(reinterpret_cast<const char*>(bin.data), bin.size));
+  auto result = dec.decode(reinterpret_cast<const char*>(bin.data), bin.size);
   update_reduction_count(env, bin.size);
   return result;
 }
@@ -65,19 +65,22 @@ static ERL_NIF_TERM nif_json_try_decode_dirty(ErlNifEnv* env, int argc, const ER
   ErlNifBinary bin;
   [[maybe_unused]] bool ok = enif_inspect_binary(env, argv[0], &bin);
   assert(ok);
-  return do_json_decode(env, bin, argc, argv);
+  auto res = do_json_try_decode(env, bin, argc, argv);
+  return make_tuple(env, res);
 }
 
 static ERL_NIF_TERM nif_json_try_decode(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
   if (argc < 1 || argc > 2) [[unlikely]]
-    return enif_make_badarg(env);
+    return enif_make_tuple2(env, AM_ERROR, AM_BADARG);
 
   ErlNifBinary bin;
   ERL_NIF_TERM sched_argv[2];
   if (enif_inspect_binary(env, argv[0], &bin)) [[likely]] {
-    if (bin.size < DIRTY_THRESHOLD)
-      return do_json_decode(env, bin, argc, argv);
+    if (bin.size < DIRTY_THRESHOLD) {
+      auto [success, res] = do_json_try_decode(env, bin, argc, argv);
+      return enif_make_tuple2(env, success ? AM_OK : AM_ERROR, res);
+    }
     sched_argv[0] = argv[0];
     sched_argv[1] = argc > 1 ? argv[1] : enif_make_list(env, 0);
   } else if (enif_inspect_iolist_as_binary(env, argv[0], &bin)) {
@@ -89,14 +92,15 @@ static ERL_NIF_TERM nif_json_try_decode(ErlNifEnv* env, int argc, const ERL_NIF_
     ERL_NIF_TERM bin_term = enif_make_binary(env, &bin);
     if (bin.size < DIRTY_THRESHOLD) {
       ERL_NIF_TERM inline_argv[2] = { bin_term, argc > 1 ? argv[1] : enif_make_list(env, 0) };
-      return do_json_decode(env, bin, argc, inline_argv);
+      auto [success, res] = do_json_try_decode(env, bin, argc, inline_argv);
+      return enif_make_tuple2(env, success ? AM_OK : AM_ERROR, res);
     }
     sched_argv[0] = bin_term;
     sched_argv[1] = argc > 1 ? argv[1] : enif_make_list(env, 0);
   } else {
     return enif_make_badarg(env);
   }
-  return enif_schedule_nif(env, "glazer_json_decode", ERL_NIF_DIRTY_JOB_CPU_BOUND,
+  return enif_schedule_nif(env, "glazer_json_try_decode", ERL_NIF_DIRTY_JOB_CPU_BOUND,
                            nif_json_try_decode_dirty, 2, sched_argv);
 }
 
@@ -249,6 +253,55 @@ static ERL_NIF_TERM nif_json_scan(ErlNifEnv* env, int argc, const ERL_NIF_TERM a
 
   update_reduction_count(env, bin.size);
   return enif_make_tuple2(env, AM_INCOMPLETE, scan_state_to_term(env, st));
+}
+
+//-----------------------------------------------------------------------------
+// NIF: json_try_encode
+//-----------------------------------------------------------------------------
+
+static ERL_NIF_TERM do_json_try_encode(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+  JSONEncodeOpts opts;
+  opts.null_term = am_null;
+  if (argc == 2 && (!enif_is_list(env, argv[1]) || !parse_encode_opts(env, argv[1], opts))) [[unlikely]]
+    return enif_make_tuple2(env, AM_ERROR, AM_BADARG);
+
+  OutBuf out;
+  JSONEncoder enc{env, opts, out};
+  if (!enc.encode(argv[0])) [[unlikely]]
+    return enif_make_tuple2(env, AM_ERROR,
+      enif_make_tuple2(env, AM_ENCODE_ERROR,
+        enif_make_tuple2(env, make_binary(env, std::string_view(enc.m_err)), enc.m_err_term)));
+
+  if (!opts.pretty) {
+    update_reduction_count(env, out.view().size());
+    return enif_make_tuple2(env, AM_OK, make_binary(env, out.view()));
+  }
+
+  auto pretty_out = glz::prettify_json(out.view());
+  update_reduction_count(env, pretty_out.size());
+  return enif_make_tuple2(env, AM_OK, make_binary(env, pretty_out));
+}
+
+static ERL_NIF_TERM nif_json_try_encode_dirty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+  return do_json_try_encode(env, argc, argv);
+}
+
+static ERL_NIF_TERM nif_json_try_encode(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+  if (argc < 1 || argc > 2) [[unlikely]]
+    return enif_make_tuple(env, AM_ERROR, AM_BADARG);
+
+  // Output size is unknown upfront; use input binary size as a proxy.
+  // For non-binary terms (atoms, integers, short lists) always run inline.
+  ErlNifBinary bin;
+  if (enif_inspect_binary(env, argv[0], &bin) && bin.size >= DIRTY_THRESHOLD) [[unlikely]] {
+    ERL_NIF_TERM sched_argv[2] = { argv[0], argc > 1 ? argv[1] : enif_make_list(env, 0) };
+    return enif_schedule_nif(env, "glazer_json_try_encode", ERL_NIF_DIRTY_JOB_CPU_BOUND,
+                             nif_json_try_encode_dirty, 2, sched_argv);
+  }
+  return do_json_try_encode(env, argc, argv);
 }
 
 //-----------------------------------------------------------------------------
@@ -749,11 +802,11 @@ static ERL_NIF_TERM nif_encode_integer(ErlNifEnv* env, int argc, const ERL_NIF_T
 
 static ERL_NIF_TERM nif_try_decode_integer(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-  if (argc != 1) [[unlikely]] return enif_make_badarg(env);
+  if (argc != 1) [[unlikely]] return enif_make_tuple2(env, AM_ERROR, AM_BADARG);
   ErlNifBinary bin;
   if (!enif_inspect_binary(env, argv[0], &bin) &&
       !enif_inspect_iolist_as_binary(env, argv[0], &bin))
-    return enif_make_badarg(env);
+    return enif_make_tuple2(env, AM_ERROR, AM_BADARG);
   auto r = glz::BigInt::decode(env,
     reinterpret_cast<const char*>(bin.data),
     reinterpret_cast<const char*>(bin.data) + bin.size);
@@ -791,6 +844,7 @@ static ErlNifFunc nif_funcs[] = {
   {"json_scan",          2, nif_json_scan,          0},
   {"json_encode",        1, nif_json_encode,        0},
   {"json_encode",        2, nif_json_encode,        0},
+  {"json_try_encode",    2, nif_json_try_encode,    0},
   {"json_encode_ndjson", 1, nif_json_encode_ndjson, 0},
   {"json_encode_ndjson", 2, nif_json_encode_ndjson, 0},
   {"yaml_encode",        1, nif_yaml_encode,        0},

@@ -141,6 +141,26 @@ encode_improper_list_test_() ->
     ?_assertError({encode_error, _}, glazer_json:encode([[1|2]]))
   ].
 
+%% Regression test: encoding a term with no matching case in the C++
+%% encoder's type-dispatch switch (pid, reference, fun — i.e. anything that
+%% isn't a bitstring/integer/map/list/atom/float/tuple) must raise a normal
+%% {encode_error, {Msg, Term}} instead of crashing the whole VM. The
+%% top-level `default:` case previously returned `false` without recording
+%% an error message/term, leaving the encoder's error fields uninitialized
+%% and causing undefined behavior (observed as a segfault) at the call site
+%% that formats the "error" message from them.
+encode_unsupported_term_type_test_() ->
+  Ref = make_ref(),
+  Fun = fun() -> ok end,
+  [
+    ?_assertError({encode_error, _}, glazer_json:encode(self())),
+    ?_assertError({encode_error, _}, glazer_json:encode(Ref)),
+    ?_assertError({encode_error, _}, glazer_json:encode(Fun)),
+    %% nested inside a list/map, too
+    ?_assertError({encode_error, _}, glazer_json:encode([self()])),
+    ?_assertError({encode_error, _}, glazer_json:encode(#{<<"a">> => self()}))
+  ].
+
 %% UTF-8 encoding correctness — issue #10.
 %% NEON implementation had a bug causing byte swapping in certain UTF-8 strings
 %% when they cross SIMD chunk boundaries (e.g., 8 ASCII + 4x 2-byte UTF-8).

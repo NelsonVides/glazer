@@ -1176,7 +1176,7 @@ struct JSONEncoder {
       }
 
       default:
-        return false;
+        return error("unsupported term type", term);
     }
   }
 
