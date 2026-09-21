@@ -9,7 +9,7 @@ defmodule Glazer.MixProject do
       deps:                  deps(),
       aliases:               aliases(),
       language:              :erlang,
-      compilers:             [:elixir, :erlang, :app],
+      compilers:             [:erlang, :elixir, :app],
       consolidate_protocols: consolidate_protocols(),
       elixirc_paths:         elixirc_paths(Mix.env())
     ]
