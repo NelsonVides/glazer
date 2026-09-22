@@ -111,10 +111,14 @@ formats.
 
 **Elixir (`mix.exs`)**:
 
+The project comes with `rebar.config`, and `mix.exs`. The later project file is for
+compiling it as a dependency in Elixir projects, and requires an explicit `manager: :mix`
+instruction:
+
 ```elixir
 def deps do
   [
-    {:glazer, "~> 1.0", manager: :rebar3}
+    {:glazer, "~> 1.0", manager: :mix}
   ]
 end
 ```
