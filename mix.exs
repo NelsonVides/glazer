@@ -11,7 +11,8 @@ defmodule Glazer.MixProject do
       language:              :erlang,
       compilers:             [:erlang, :elixir, :app],
       consolidate_protocols: consolidate_protocols(),
-      elixirc_paths:         elixirc_paths(Mix.env())
+      elixirc_paths:         elixirc_paths(Mix.env()),
+      docs:                  docs()
     ]
   end
 
@@ -54,6 +55,8 @@ defmodule Glazer.MixProject do
   # their precompiled NIFs correctly under rustler 0.37.3 / rustler_precompiled 0.9.
   defp deps do
     [
+      # mix docs
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       # Benchmarking dependencies
       {:simdjsone,           "~> 0.5",    only: :bench},
       {:jason,               "~> 1.4",    only: :bench},
@@ -80,6 +83,34 @@ defmodule Glazer.MixProject do
       "bench-json": "bench_json --only bench",
       "bench-yaml": "bench_yaml --only bench",
       "bench-csv":  "bench_csv  --only bench"
+    ]
+  end
+
+  def docs do
+    [
+      extras: [
+        "README.md":  %{title: "Overview"},
+        "LICENSE":    %{title: "License"},
+        "RELEASE.md": %{title: "Release"}
+      ],
+      main:          "README.md",
+      source_url:    "https://github.com/saleyn/glazer",
+      #assets:        %{assets: "assets/"},
+      groups_for_extras: [
+        %{Release: "release"}
+      ],
+      groups_for_modules: [
+        Erlang:        ~r/glazer/,
+        Elixir:        ~r/Glazer/,
+        Miscellaneous: ~r/Jason/
+      ],
+      skip_undefined_reference_warnings_on: [
+        :glazer,
+        :glazer_csv,
+        :glazer_json,
+        :glazer_yaml,
+        "README.md"
+      ]
     ]
   end
 end

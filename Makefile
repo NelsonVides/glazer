@@ -113,7 +113,7 @@ memcheck:
 	@$(REBAR) compile
 
 doc docs:
-	$(REBAR) ex_doc
+	mix docs 2>&1 | grep -v "using single-quoted strings" | grep -v "indeed want a charlist)"
 
 benchmark bench: do-bench
 

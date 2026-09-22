@@ -52,6 +52,10 @@ defprotocol Glazer.JSON.Encoder do
   - **Field filtering**: Happens at compile time; zero runtime cost
   - **JSON encoding**: Uses Glazer's fast C++ NIF backend (2-10x faster than pure Elixir)
   - **No allocations**: Filtered map is stack-allocated
+
+  ## See Also
+
+  - `Jason.Encoder`
   """
 
   @type t :: term
@@ -220,10 +224,6 @@ if Code.ensure_loaded?(Decimal) do
   end
 end
 
-# Provide Jason.Encoder as a fallback if Jason is not available
-# This allows users to write @derive {Jason.Encoder, ...} even without Jason as a dependency
-# When Jason is loaded, it provides its own Jason.Encoder protocol (and this
-# branch is skipped entirely).
 if not Code.ensure_loaded?(Jason.Encoder) do
   # `defimpl Jason.Encoder` requires the protocol itself to exist; since Jason
   # isn't a dependency here, define a minimal shim matching Jason's own
@@ -231,6 +231,24 @@ if not Code.ensure_loaded?(Jason.Encoder) do
   # be `@derive {Jason.Encoder, ...}`'d — should the app later add Jason as a
   # real dependency, Jason's own protocol/implementation takes over instead.
   defprotocol Jason.Encoder do
+    @moduledoc """
+    Provide `Jason.Encoder` as a fallback if Jason is not available.
+    This allows users to write `@derive {Jason.Encoder, ...}` even without `Jason`
+    as a dependency. When Jason is loaded, it provides its own `Jason.Encoder`
+    protocol (and this branch is skipped entirely). This way source code in
+    applications that defines `@derive` for structs doen't need to be modified.
+
+    **E.g.**:
+
+    ```
+    @derive {Jason.Encoder, only: [:id, :name, :created_at]}
+    defstruct [:id, :name, :secret, :created_at]
+    ```
+
+    ### See Also
+
+    - `Glazer.JSON.Encoder`
+    """
     @fallback_to_any true
     def encode(value, opts)
   end

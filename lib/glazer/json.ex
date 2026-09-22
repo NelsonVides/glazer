@@ -24,14 +24,14 @@ defmodule Glazer.JSON do
   Decode a JSON binary or iolist, returning `{:ok, term}` or `{:error, reason}`
   instead of raising. The atom `nil` is used for JSON `null`.
 
-  See `:glazer.json_try_decode/2`.
+  See `:glazer_json.try_decode/2`.
   """
   def decode(input), do: :glazer.json_try_decode(input, [:use_nil])
 
   @doc """
   Like `decode/1`, but with decode options (see `t::glazer_json.decode_opts/0`).
 
-  See `:glazer.json_try_decode/2`.
+  See `:glazer_json.try_decode/2`.
   """
   def decode(input, opts), do: :glazer.json_try_decode(input, [:use_nil | opts])
 
@@ -39,7 +39,7 @@ defmodule Glazer.JSON do
   Decode a JSON binary or iolist to an Elixir term, raising `Glazer.ParseError`
   on invalid input. The atom `nil` is used for JSON `null`.
 
-  See `:glazer.json_try_decode/2`.
+  See `:glazer_json.try_decode/2`.
   """
   def decode!(input) do
     case :glazer.json_try_decode(input, [:use_nil]) do
@@ -52,14 +52,14 @@ defmodule Glazer.JSON do
   Encode an Elixir term to a JSON binary, raising `Glazer.ParseError` if
   `data` cannot be encoded. The atom `nil` is encoded as JSON `null`.
 
-  See `:glazer.json_try_encode/2`.
+  See `:glazer_json.try_encode/2`.
   """
   def encode!(data), do: encode!(data, [])
 
   @doc """
   Like `encode!/1`, but with encode options (see `t::glazer_json.encode_opts/0`).
 
-  See `:glazer.json_try_encode/2`.
+  See `:glazer_json.try_encode/2`.
   """
   def encode!(data, opts) do
     case :glazer.json_try_encode(data, [:use_nil | opts]) do

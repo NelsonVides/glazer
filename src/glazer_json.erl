@@ -204,11 +204,15 @@ Decode a JSON binary to an Erlang term. Equivalent to `decode/1`, provided
 for API parity with Elixir's `JSON.decode!/1`. Raises `{parse_error,
 Reason}` on invalid input.
 
+## NOTE
+
+This function is deprecated. Use `Glazer.JSON.decode!/1` instead.
+
 ## Examples
 
-```erlang
-1> glazer_json:'decode!'(<<"{\"a\":1}">>).
-#{<<"a">> => 1}
+```elixir
+1> Glazer.JSON.decode!("{\"a\":1}").
+%{"a" => 1}
 ```
 """.
 -spec 'decode!'(binary() | iolist()) -> term().
@@ -386,10 +390,14 @@ Encode an Erlang term to a JSON binary. Equivalent to `encode/1`, provided
 for API parity with Elixir's `JSON.encode!/1`. Raises `{encode_error, Msg}`
 if `Data` cannot be encoded.
 
+## NOTE
+
+This function is deprecated. Use `Glazer.JSON.encode!/1` instead.
+
 ## Examples
 
-```erlang
-1> glazer_json:'encode!'(#{<<"a">> => 1}).
+```elixir
+1> Glazer.JSON.encode!(%{"a" => 1}).
 <<"{\"a\":1}">>
 ```
 """.
@@ -403,10 +411,14 @@ already returns a binary, itself valid iodata), provided for API parity with
 Elixir's `JSON.encode_to_iodata!/1`. Raises `{encode_error, Msg}` if `Data`
 cannot be encoded.
 
+## NOTE
+
+This function is deprecated. Use `Glazer.JSON.encode_to_iodata!/1` instead.
+
 ## Examples
 
-```erlang
-1> glazer_json:'encode_to_iodata!'(#{<<"a">> => 1}).
+```elixir
+1> Glazer.JSON.encode_to_iodata!(%{"a" => 1}).
 <<"{\"a\":1}">>
 ```
 """.
