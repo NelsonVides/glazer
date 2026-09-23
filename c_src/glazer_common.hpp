@@ -184,7 +184,18 @@ inline ERL_NIF_TERM make_span_term(ErlNifEnv* env, ERL_NIF_TERM input_bin, const
 }
 
 //-----------------------------------------------------------------------------
+// Custom exception for allocation failures — zero overhead when not thrown
+//-----------------------------------------------------------------------------
+struct OutOfMemory : public std::exception {
+  const char* what() const noexcept override { return "out of memory"; }
+};
+
+//-----------------------------------------------------------------------------
 // Output buffer — 4 KB inline, grows to heap
+//
+// Exception-based error handling: allocation failures throw OutOfMemory() instead
+// of silently failing (like the original code did). This forces explicit handling
+// of OOM errors in the NIF wrappers.
 //-----------------------------------------------------------------------------
 
 struct OutBuf {
@@ -204,12 +215,15 @@ struct OutBuf {
     while (nc < m_len + need) nc *= 2;
     if (m_data == m_inline) [[unlikely]] {
       // Can't realloc a stack array — first spill to the heap requires a copy.
-      auto nb = std::unique_ptr<char[]>(static_cast<char*>(malloc(nc)));
-      memcpy(nb.get(), m_data, m_len);
-      m_data = nb.release();
+      auto nb = static_cast<char*>(malloc(nc));
+      if (!nb) [[unlikely]] throw OutOfMemory();
+      memcpy(nb, m_data, m_len);
+      m_data = nb;
     } else {
       // May resize in place (no copy) when the allocator can extend the block.
-      m_data = static_cast<char*>(realloc(m_data, nc));
+      auto resized = static_cast<char*>(realloc(m_data, nc));
+      if (!resized) [[unlikely]] throw OutOfMemory();
+      m_data = resized;
     }
     m_cap = nc;
   }

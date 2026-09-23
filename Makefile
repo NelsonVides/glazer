@@ -72,6 +72,7 @@ distclean: clean
 
 test:
 	$(REBAR) eunit
+	mix test
 
 # Locate the ASan runtime for LD_PRELOAD on Linux.
 # macOS memcheck is not supported (DYLD_INSERT_LIBRARIES is dropped by the
@@ -159,6 +160,7 @@ deprecate:
 	$(REBAR) hex retire $(APP) $(vsn) deprecated --message Deprecated
 
 cover:
+	mix test --cover
 	$(REBAR) cover --verbose
 
 bump-version:

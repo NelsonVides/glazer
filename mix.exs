@@ -12,7 +12,8 @@ defmodule Glazer.MixProject do
       compilers:             [:erlang, :elixir, :app],
       consolidate_protocols: consolidate_protocols(),
       elixirc_paths:         elixirc_paths(Mix.env()),
-      docs:                  docs()
+      docs:                  docs(),
+      test_coverage:         test_coverage()
     ]
   end
 
@@ -63,16 +64,16 @@ defmodule Glazer.MixProject do
       {:jiffy,               "~> 2.0.2",  only: :bench},
       {:thoas,               "~> 1.2",    only: :bench},
       {:euneus,              "~> 2.0",    only: :bench},
-      {:torque,              "~> 0.2.1",  only: :bench},
+      {:torque,              "~> 0.4.1",  only: :bench},
       {:yamerl,              "~> 0.10",   only: :bench},
       {:fast_yaml,           "~> 1.0",    only: :bench},
       {:ymlr,                "~> 5.1",    only: :bench},
       {:csv,                 "~> 3.2",    only: :bench},
       {:nimble_csv,          "~> 1.3",    only: :bench},
-      {:erl_csv,             "~> 0.3.3",  only: :bench},
+      {:erl_csv,             "~> 0.5.0",  only: :bench},
       {:yaml_rustler,        "~> 0.1.6",  only: :bench},
-      {:rusty_csv,           "~> 0.3.11", only: :bench},
-      {:rustler,             "~> 0.37.3", only: :bench, override: true, runtime: false},
+      {:rusty_csv,           "~> 0.4.6",  only: :bench},
+      {:rustler,             "~> 0.38",   only: :bench, override: true, runtime: false},
       {:rustler_precompiled, "~> 0.9",    only: :bench, override: true},
     ]
   end
@@ -83,6 +84,36 @@ defmodule Glazer.MixProject do
       "bench-json": "bench_json --only bench",
       "bench-yaml": "bench_yaml --only bench",
       "bench-csv":  "bench_csv  --only bench"
+    ]
+  end
+
+  def test_coverage do
+    [
+      summary: [threshold: 90],
+      # Ignore Elixir wrapper modules and protocols to get accurate coverage
+      # of the core Erlang implementation. The Elixir modules are thin wrappers
+      # that add minimal logic, so excluding them gives a clearer picture of
+      # implementation coverage.
+      ignore_modules: [
+        :glazer,
+        :glazer_csv,
+        :glazer_yaml,
+        :glazer_json,
+        :"Elixir.Glazer.JSON.Encoder.Any",
+        :"Elixir.Glazer.JSON.Encoder.Atom",
+        :"Elixir.Glazer.JSON.Encoder.BitString",
+        :"Elixir.Glazer.JSON.Encoder.Date",
+        :"Elixir.Glazer.JSON.Encoder.DateTime",
+        :"Elixir.Glazer.JSON.Encoder.Float",
+        :"Elixir.Glazer.JSON.Encoder.Integer",
+        :"Elixir.Glazer.JSON.Encoder.List",
+        :"Elixir.Glazer.JSON.Encoder.Map",
+        :"Elixir.Glazer.JSON.Encoder.NaiveDateTime",
+        :"Elixir.Glazer.JSON.Encoder.Time",
+        :"Elixir.Glazer.JSON.Encoder.DeriveHelper",
+        :"Elixir.Jason.Encoder",
+        :"Elixir.Jason.Encoder.Any"
+      ]
     ]
   end
 

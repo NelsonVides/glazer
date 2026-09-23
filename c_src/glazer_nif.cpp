@@ -315,21 +315,27 @@ static ERL_NIF_TERM do_json_encode(ErlNifEnv* env, int argc, const ERL_NIF_TERM 
   if (argc == 2 && (!enif_is_list(env, argv[1]) || !parse_encode_opts(env, argv[1], opts))) [[unlikely]]
     return enif_make_badarg(env);
 
-  OutBuf out;
-  JSONEncoder enc{env, opts, out};
-  if (!enc.encode(argv[0])) [[unlikely]]
+  try {
+    OutBuf out;
+    JSONEncoder enc{env, opts, out};
+    if (!enc.encode(argv[0])) [[unlikely]]
+      return enif_raise_exception(env,
+        enif_make_tuple2(env, AM_ENCODE_ERROR,
+          enif_make_tuple2(env, make_binary(env, std::string_view(enc.m_err)), enc.m_err_term)));
+
+    if (!opts.pretty) {
+      update_reduction_count(env, out.view().size());
+      return make_binary(env, out.view());
+    }
+
+    auto pretty_out = glz::prettify_json(out.view());
+    update_reduction_count(env, pretty_out.size());
+    return make_binary(env, pretty_out);
+  } catch (const OutOfMemory& e) {
     return enif_raise_exception(env,
       enif_make_tuple2(env, AM_ENCODE_ERROR,
-        enif_make_tuple2(env, make_binary(env, std::string_view(enc.m_err)), enc.m_err_term)));
-
-  if (!opts.pretty) {
-    update_reduction_count(env, out.view().size());
-    return make_binary(env, out.view());
+        enif_make_tuple2(env, make_binary(env, std::string_view("out of memory")), am_null)));
   }
-
-  auto pretty_out = glz::prettify_json(out.view());
-  update_reduction_count(env, pretty_out.size());
-  return make_binary(env, pretty_out);
 }
 
 static ERL_NIF_TERM nif_json_encode_dirty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
@@ -367,29 +373,35 @@ static ERL_NIF_TERM do_json_encode_ndjson(ErlNifEnv* env, int argc, const ERL_NI
   if (argc == 2 && (!enif_is_list(env, argv[1]) || !parse_encode_opts(env, argv[1], opts))) [[unlikely]]
     return enif_make_badarg(env);
 
-  OutBuf out;
-  ERL_NIF_TERM head;
-  ERL_NIF_TERM list = argv[0];
+  try {
+    OutBuf out;
+    ERL_NIF_TERM head;
+    ERL_NIF_TERM list = argv[0];
 
-  // Iterate through the list and encode each element, appending \n after each
-  while (enif_get_list_cell(env, list, &head, &list)) {
-    JSONEncoder enc{env, opts, out};
-    if (!enc.encode(head)) [[unlikely]]
-      return enif_raise_exception(env,
-        enif_make_tuple2(env, AM_ENCODE_ERROR,
-          enif_make_tuple2(env, make_binary(env, std::string_view(enc.m_err)), enc.m_err_term)));
-    out.push('\n');
+    // Iterate through the list and encode each element, appending \n after each
+    while (enif_get_list_cell(env, list, &head, &list)) {
+      JSONEncoder enc{env, opts, out};
+      if (!enc.encode(head)) [[unlikely]]
+        return enif_raise_exception(env,
+          enif_make_tuple2(env, AM_ENCODE_ERROR,
+            enif_make_tuple2(env, make_binary(env, std::string_view(enc.m_err)), enc.m_err_term)));
+      out.push('\n');
+    }
+
+    // Check for proper list termination (should end with empty list)
+    if (!enif_is_empty_list(env, list)) [[unlikely]]
+      return enif_make_badarg(env);
+
+    // Note: pretty printing is not applied to NDJSON since each line is
+    // an independent JSON value. The 'pretty' option affects how each
+    // individual value is encoded, not the line formatting.
+    update_reduction_count(env, out.view().size());
+    return make_binary(env, out.view());
+  } catch (const OutOfMemory& e) {
+    return enif_raise_exception(env,
+      enif_make_tuple2(env, AM_ENCODE_ERROR,
+        enif_make_tuple2(env, make_binary(env, std::string_view("out of memory")), am_null)));
   }
-
-  // Check for proper list termination (should end with empty list)
-  if (!enif_is_empty_list(env, list)) [[unlikely]]
-    return enif_make_badarg(env);
-
-  // Note: pretty printing is not applied to NDJSON since each line is
-  // an independent JSON value. The 'pretty' option affects how each
-  // individual value is encoded, not the line formatting.
-  update_reduction_count(env, out.view().size());
-  return make_binary(env, out.view());
 }
 
 static ERL_NIF_TERM nif_json_encode_ndjson_dirty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
@@ -437,18 +449,24 @@ static ERL_NIF_TERM do_yaml_encode(ErlNifEnv* env, int argc, const ERL_NIF_TERM 
   if (argc == 2 && (!enif_is_list(env, argv[1]) || !parse_yaml_encode_opts(env, argv[1], opts))) [[unlikely]]
     return enif_make_badarg(env);
 
-  OutBuf out;
-  YAMLEncoder enc{env, opts, out};
-  if (!enc.encode(argv[0])) {
-    if (enc.m_err)
-      return enif_raise_exception(env,
-        enif_make_tuple2(env, AM_ENCODE_ERROR,
-          enif_make_tuple2(env, make_binary(env, std::string_view(enc.m_err)), enc.m_err_term)));
-    return enif_raise_exception(env, AM_INVALID_INPUT);
-  }
+  try {
+    OutBuf out;
+    YAMLEncoder enc{env, opts, out};
+    if (!enc.encode(argv[0])) {
+      if (enc.m_err)
+        return enif_raise_exception(env,
+          enif_make_tuple2(env, AM_ENCODE_ERROR,
+            enif_make_tuple2(env, make_binary(env, std::string_view(enc.m_err)), enc.m_err_term)));
+      return enif_raise_exception(env, AM_INVALID_INPUT);
+    }
 
-  update_reduction_count(env, out.view().size());
-  return make_binary(env, out.view());
+    update_reduction_count(env, out.view().size());
+    return make_binary(env, out.view());
+  } catch (const OutOfMemory& e) {
+    return enif_raise_exception(env,
+      enif_make_tuple2(env, AM_ENCODE_ERROR,
+        enif_make_tuple2(env, make_binary(env, std::string_view("out of memory")), am_null)));
+  }
 }
 
 static ERL_NIF_TERM nif_yaml_encode_dirty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
@@ -481,15 +499,21 @@ static ERL_NIF_TERM do_csv_encode(ErlNifEnv* env, int argc, const ERL_NIF_TERM a
   if (argc == 2 && (!enif_is_list(env, argv[1]) || !parse_csv_encode_opts(env, argv[1], opts))) [[unlikely]]
     return enif_make_badarg(env);
 
-  OutBuf out;
-  CSVEncoder enc{env, opts, out};
-  if (!enc.encode(argv[0])) [[unlikely]]
+  try {
+    OutBuf out;
+    CSVEncoder enc{env, opts, out};
+    if (!enc.encode(argv[0])) [[unlikely]]
+      return enif_raise_exception(env,
+        enif_make_tuple2(env, AM_ENCODE_ERROR,
+          enif_make_tuple2(env, make_binary(env, std::string_view(enc.m_err)), enc.m_err_term)));
+
+    update_reduction_count(env, out.view().size());
+    return make_binary(env, out.view());
+  } catch (const OutOfMemory& e) {
     return enif_raise_exception(env,
       enif_make_tuple2(env, AM_ENCODE_ERROR,
-        enif_make_tuple2(env, make_binary(env, std::string_view(enc.m_err)), enc.m_err_term)));
-
-  update_reduction_count(env, out.view().size());
-  return make_binary(env, out.view());
+        enif_make_tuple2(env, make_binary(env, std::string_view("out of memory")), am_null)));
+  }
 }
 
 static ERL_NIF_TERM nif_csv_encode_dirty(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])

@@ -2,6 +2,7 @@
 /deps/
 /doc/
 /priv/
+/cover/
 /obj/
 /test/bench-go/bench
 erl_crash.dump
