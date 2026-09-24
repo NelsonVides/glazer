@@ -874,13 +874,16 @@ struct Scanner {
 
 inline ERL_NIF_TERM scan_state_to_term(ErlNifEnv* env, const ScanState& st)
 {
+  static const ERL_NIF_TERM s_atoms[] = {AM_FALSE, AM_TRUE};
+
   return enif_make_tuple6(env,
     enif_make_uint64(env, st.pos),
     enif_make_uint(env, st.depth),
-    st.in_string ? AM_TRUE : AM_FALSE,
-    st.escape    ? AM_TRUE : AM_FALSE,
-    st.started   ? AM_TRUE : AM_FALSE,
-    st.scalar    ? AM_TRUE : AM_FALSE);
+    s_atoms[st.in_string],
+    s_atoms[st.escape],
+    s_atoms[st.started],
+    s_atoms[st.scalar]
+  );
 }
 
 inline bool scan_state_from_term(ErlNifEnv* env, ERL_NIF_TERM term, ScanState& st)
