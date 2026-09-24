@@ -13,7 +13,7 @@ env:
   OTP_LATEST: "29"
   MIN_AGE_HOURS: 1
   # Number of most-recent Hex.pm releases to keep active (not retire).
-  KEEP_RELEASES: 3
+  KEEP_RELEASES: 5
 
 jobs:
   linux:
@@ -31,8 +31,9 @@ jobs:
           - { compiler: GNU-14,  CC: gcc-14,   CXX: g++-14 }
           - { compiler: GNU-12,  CC: gcc-12,   CXX: g++-12 }
           - { compiler: LLVM-19, CC: clang-19, CXX: clang++-19 }
-        otp: [27, 28, 29]
-        elixir: ["1.20"]
+        otp:    [27, 28, 29]
+        elixir: ['1.20']
+        rebar:  ['3.27.0']
         exclude:
           # GCC 14 and clang 19 are only available in OTP 28 (Debian Bookworm+)
           - { otp: 27, compiler: { compiler: GNU-14 } }
@@ -47,6 +48,7 @@ jobs:
         with:
           elixir-version: ${{ matrix.elixir }}
           otp-version:    ${{ matrix.otp }}
+          rebar3-version: latest
 
       - name: OTP Version
         run:  erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell -noinput;
@@ -94,9 +96,10 @@ jobs:
           CC:  ${{ matrix.compiler.CC }}
           CXX: ${{ matrix.compiler.CXX }}
         run:  |
-          adduser --disabled-password --gecos '' newuser
-          chown -R newuser:newuser .
-          su -c "make test" newuser
+          #sudo adduser --disabled-password --gecos '' newuser
+          #sudo chown -R newuser:newuser .
+          #su -c "make test" newuser
+          make test
 
   macOS:
     name: OTP ${{ matrix.otp }} macos.${{ matrix.compiler.compiler }}
@@ -106,16 +109,16 @@ jobs:
       matrix:
         compiler:
           - { compiler: XCode, CC: cc, CXX: c++ }
-        otp: [27, 28, 29]
-        elixir: ["1.20"]
+        otp:    [27, 28, 29]
+        elixir: ['1.20']
     steps:
       - uses: actions/checkout@v2
       - name: Install Erlang/OTP
         uses: erlef/setup-beam@v1
         with:
-          otp-version: ${{ matrix.otp }}
+          otp-version:    ${{ matrix.otp }}
           elixir-version: ${{ matrix.elixir }}
-          rebar3-version: '3'
+          rebar3-version: latest
       - name: OTP Version
         run:  erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell -noinput;
       - name: Fix Ownership
@@ -161,9 +164,9 @@ jobs:
       - name: Install Erlang/OTP
         uses: erlef/setup-beam@v1
         with:
-          otp-version: ${{ matrix.otp }}
+          otp-version:    ${{ matrix.otp }}
           elixir-version: ${{ matrix.elixir }}
-          rebar3-version: '3'
+          rebar3-version: latest
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
@@ -279,9 +282,9 @@ jobs:
         uses: erlef/setup-beam@v1
         with:
           # Latest that excludes pre-releases
-          otp-version: "> 0"
+          otp-version:    "> 0"
           elixir-version: "> 0"
-          rebar3-version: '3'
+          rebar3-version: latest
           hexpm-mirrors: |
             https://builds.hex.pm
             https://cdn.jsdelivr.net/hex
