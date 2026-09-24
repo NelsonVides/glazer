@@ -19,7 +19,6 @@ jobs:
   linux:
     runs-on: ubuntu-latest
     name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.compiler.compiler }}
-
     #container:
     #  image: erlang:${{matrix.otp}}
 
@@ -41,6 +40,10 @@ jobs:
           # GCC 12 is available in OTP 27 (Debian Bookworm)
           - { otp: 28, compiler: { compiler: GNU-12 } }
           - { otp: 29, compiler: { compiler: GNU-12 } }
+
+    env:
+      CC:  ${{ matrix.compiler.CC }}
+      CXX: ${{ matrix.compiler.CXX }}
 
     steps:
       - uses: actions/checkout@v4
@@ -72,9 +75,6 @@ jobs:
             sudo apt-get install -y --no-install-recommends "lld-$LLVM_VER" || sudo apt-get install -y --no-install-recommends lld
           fi
       - name: Build
-        env:
-          CC:  ${{ matrix.compiler.CC }}
-          CXX: ${{ matrix.compiler.CXX }}
         run:  make compile
       - name: Cache Dialyzer PLT
         uses: actions/cache@v4
@@ -82,25 +82,11 @@ jobs:
           path: _build/default/*_plt
           key: dialyzer-plt-${{ matrix.os }}-otp${{ matrix.otp }}-${{ hashFiles('rebar.config', 'rebar.lock') }}
       - name: Check
-        env:
-          CC:  ${{ matrix.compiler.CC }}
-          CXX: ${{ matrix.compiler.CXX }}
         run:  make check
       - name: Sanitize Memory
-        env:
-          CC:  ${{ matrix.compiler.CC }}
-          CXX: ${{ matrix.compiler.CXX }}
-        run: make memcheck
+        run:  make memcheck
       - name: Test
-        env:
-          CC:  ${{ matrix.compiler.CC }}
-          CXX: ${{ matrix.compiler.CXX }}
-        run:  |
-          #sudo adduser --disabled-password --gecos '' newuser
-          #sudo chown -R newuser:newuser .
-          #su -c "make test" newuser
-          make test
-
+        run:  make test
   macOS:
     name: OTP ${{ matrix.otp }} macos.${{ matrix.compiler.compiler }}
     runs-on: macos-latest
@@ -111,6 +97,9 @@ jobs:
           - { compiler: XCode, CC: cc, CXX: c++ }
         otp:    [27, 28, 29]
         elixir: ['1.20']
+    env:
+      CC:  ${{ matrix.compiler.CC }}
+      CXX: ${{ matrix.compiler.CXX }}
     steps:
       - uses: actions/checkout@v2
       - name: Install Erlang/OTP
@@ -126,9 +115,6 @@ jobs:
       - name: Install CMake
         run:  brew install cmake
       - name: Build
-        env:
-          CC:  ${{ matrix.compiler.CC }}
-          CXX: ${{ matrix.compiler.CXX }}
         run:  make compile
       - name: Cache Dialyzer PLT
         uses: actions/cache@v4
@@ -136,14 +122,8 @@ jobs:
           path: _build/default/*_plt
           key: dialyzer-plt-macos-otp${{ matrix.otp }}-${{ hashFiles('rebar.config', 'rebar.lock') }}
       - name: Check
-        env:
-          CC:  ${{ matrix.compiler.CC }}
-          CXX: ${{ matrix.compiler.CXX }}
         run:  make check
       - name: Test
-        env:
-          CC:  ${{ matrix.compiler.CC }}
-          CXX: ${{ matrix.compiler.CXX }}
         run:  make test
 
   windows:
@@ -158,6 +138,9 @@ jobs:
       matrix:
         otp: [27, 28, 29]
         elixir: ["1.20"]
+    env:
+      CC:  gcc
+      CXX: g++
 
     steps:
       - uses: actions/checkout@v2
@@ -183,9 +166,6 @@ jobs:
           erl -noshell -noinput -eval 'io:format("root_dir=~ts~n",[code:root_dir()]),io:format("ei_include=~ts~n",[code:lib_dir(erl_interface,include)]),io:format("ei_lib=~ts~n",[code:lib_dir(erl_interface,lib)]),halt(0).'
       - name: Build
         shell: msys2 {0}
-        env:
-          CC:  gcc
-          CXX: g++
         run:  make compile
       - name: Cache Dialyzer PLT
         uses: actions/cache@v4
@@ -194,15 +174,9 @@ jobs:
           key: dialyzer-plt-windows-otp${{ matrix.otp }}-${{ hashFiles('rebar.config', 'rebar.lock') }}
       - name: Check
         shell: msys2 {0}
-        env:
-          CC:  gcc
-          CXX: g++
         run:  make check
       - name: Test
         shell: msys2 {0}
-        env:
-          CC:  gcc
-          CXX: g++
         run:  make test
 
   detect-release:
