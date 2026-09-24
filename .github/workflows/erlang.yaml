@@ -54,8 +54,8 @@ jobs:
         run:  git config --global --add safe.directory ${GITHUB_WORKSPACE}
       - name: Install build tools
         run:  |
-          apt-get update -qq
-          apt-get install -y --no-install-recommends curl gnupg lsb-release cmake
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends curl gnupg lsb-release cmake
           # Debian's default repos only ship clang up to ~16; pull newer LLVM
           # releases from the official apt.llvm.org repo when needed.
           if ! apt-cache show ${{ matrix.compiler.CC }} >/dev/null 2>&1; then
@@ -63,11 +63,11 @@ jobs:
             curl -fsSL https://apt.llvm.org/llvm.sh -o /tmp/llvm.sh
             bash /tmp/llvm.sh "$LLVM_VER"
           fi
-          apt-get install -y --no-install-recommends ${{ matrix.compiler.CC }} ${{ matrix.compiler.CXX }}
+          sudo apt-get install -y --no-install-recommends ${{ matrix.compiler.CC }} ${{ matrix.compiler.CXX }}
           # Clang emits LLVM-bitcode objects under LTO; lld is required to link them.
           if echo "${{ matrix.compiler.compiler }}" | grep -q '^LLVM-'; then
             LLVM_VER=$(echo "${{ matrix.compiler.compiler }}" | sed -E 's/^LLVM-//')
-            apt-get install -y --no-install-recommends "lld-$LLVM_VER" || apt-get install -y --no-install-recommends lld
+            sudo apt-get install -y --no-install-recommends "lld-$LLVM_VER" || sudo apt-get install -y --no-install-recommends lld
           fi
       - name: Build
         env:
