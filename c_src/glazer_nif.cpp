@@ -52,7 +52,7 @@ static std::tuple<bool, ERL_NIF_TERM> do_json_try_decode(ErlNifEnv* env, const E
 {
   JSONDecodeOpts opts;
   opts.null_term = am_null;
-  if (argc == 2 && (!enif_is_list(env, argv[1]) || !parse_decode_opts(env, argv[1], opts)))
+  if (argc == 2 && (!enif_is_list(env, argv[1]) || !parse_decode_opts(env, argv[1], opts))) [[unlikely]]
     return std::make_tuple(false, AM_BADARG);
   JSONDecoder dec(env, opts, reinterpret_cast<const char*>(bin.data), bin.size, argv[0]);
   auto result = dec.decode(reinterpret_cast<const char*>(bin.data), bin.size);
@@ -229,8 +229,7 @@ static ERL_NIF_TERM nif_csv_try_decode(ErlNifEnv* env, int argc, const ERL_NIF_T
 
 static ERL_NIF_TERM nif_json_scan(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-  if (argc < 1 || argc > 2) [[unlikely]]
-    return enif_make_badarg(env);
+  assert(argc == 2);
 
   ErlNifBinary bin;
   if (!enif_inspect_binary(env, argv[0], &bin) &&
@@ -238,7 +237,7 @@ static ERL_NIF_TERM nif_json_scan(ErlNifEnv* env, int argc, const ERL_NIF_TERM a
     return enif_make_badarg(env);
 
   ScanState st = ScanState::initial();
-  if (argc == 2 && !scan_state_from_term(env, argv[1], st))
+  if (!scan_state_from_term(env, argv[1], st)) [[unlikely]]
     return enif_make_badarg(env);
 
   const char* data = reinterpret_cast<const char*>(bin.data);
@@ -864,7 +863,6 @@ static ErlNifFunc nif_funcs[] = {
   {"yaml_try_decode",    2, nif_yaml_try_decode,    0},
   {"csv_try_decode",     1, nif_csv_try_decode,     0},
   {"csv_try_decode",     2, nif_csv_try_decode,     0},
-  {"json_scan",          1, nif_json_scan,          0},
   {"json_scan",          2, nif_json_scan,          0},
   {"json_encode",        1, nif_json_encode,        0},
   {"json_encode",        2, nif_json_encode,        0},

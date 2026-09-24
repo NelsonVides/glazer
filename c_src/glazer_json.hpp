@@ -889,6 +889,7 @@ inline ERL_NIF_TERM scan_state_to_term(ErlNifEnv* env, const ScanState& st)
 inline bool scan_state_from_term(ErlNifEnv* env, ERL_NIF_TERM term, ScanState& st)
 {
   int arity; const ERL_NIF_TERM* tp;
+  if (enif_is_identical(term, AM_UNDEFINED)) return true;
   if (!enif_get_tuple(env, term, &arity, &tp) || arity != 6) return false;
 
   ErlNifUInt64 pos;

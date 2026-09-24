@@ -11,6 +11,7 @@ static ERL_NIF_TERM AM_ENOMEM;
 static ERL_NIF_TERM AM_ERROR;
 static ERL_NIF_TERM AM_FALSE;
 static ERL_NIF_TERM AM_NIL;
+static ERL_NIF_TERM AM_UNDEFINED;
 static ERL_NIF_TERM AM_NULL;
 static ERL_NIF_TERM AM_OK;
 static ERL_NIF_TERM AM_TRUE;
@@ -176,6 +177,7 @@ inline void init_atoms(ErlNifEnv* env)
   AM_TUPLE                     = enif_make_atom(env, "tuple");
   AM_TYPE                      = enif_make_atom(env, "type");
   AM_UESCAPE                   = enif_make_atom(env, "uescape");
+  AM_UNDEFINED                 = enif_make_atom(env, "undefined");
   AM_UNTERMINATED_QUOTED_FIELD = enif_make_atom(env, "unterminated_quoted_field");
   AM_USE_NIL                   = enif_make_atom(env, "use_nil");
   AM_VALIDATE_UTF8             = enif_make_atom(env, "validate_utf8");

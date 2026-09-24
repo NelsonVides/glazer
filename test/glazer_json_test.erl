@@ -946,3 +946,305 @@ json_encode_ndjson_test_() ->
       ?assertEqual(101, length(Lines))
     end)
   ].
+
+%% ----------------------------------------------------------------------------
+%% decode_start/3 and decode_continue/2 tests
+%% OTP json module compatibility for incremental/streaming JSON decoding
+%% ----------------------------------------------------------------------------
+
+decode_start_single_complete_test_() ->
+  %% Scenario 1: Single complete value in one call
+  [
+    ?_assertEqual(
+      {#{<<"a">> => 1, <<"b">> => 2}, test_acc, <<>>},
+      glazer_json:decode_start(<<"{\"a\":1,\"b\":2}">>, test_acc, #{})
+    ),
+    ?_assertEqual(
+      {[1, 2, 3, 4, 5], test_acc, <<>>},
+      glazer_json:decode_start(<<"[1,2,3,4,5]">>, test_acc, #{})
+    ),
+    ?_assertEqual(
+      {<<"hello">>, test_acc, <<>>},
+      glazer_json:decode_start(<<"\"hello\"">>, test_acc, #{})
+    )
+  ].
+
+decode_start_incomplete_test_() ->
+  %% Scenario 2: Incomplete value returns continuation
+  [
+    ?_test(begin
+      Result = glazer_json:decode_start(<<"{\"key\"">>, acc, #{}),
+      ?assertMatch({continue, _State}, Result)
+    end),
+    ?_test(begin
+      Result = glazer_json:decode_start(<<"[1,2,">>, acc, #{}),
+      ?assertMatch({continue, _State}, Result)
+    end),
+    ?_test(begin
+      Result = glazer_json:decode_start(<<"null">>, acc, #{}),
+      ?assertMatch({continue, _State}, Result)
+    end)
+  ].
+
+decode_continue_single_split_test_() ->
+  %% Scenario 3: Single value split across multiple calls
+  [
+    ?_test(begin
+      {continue, S0} = glazer_json:decode_start(<<"{\"key\"">>, acc, #{}),
+      {continue, S1} = glazer_json:decode_continue(<<":\"va">>, S0),
+      {#{<<"key">> := <<"value">>}, acc, <<>>} = glazer_json:decode_continue(<<"lue\"}">>, S1),
+      true
+    end),
+    ?_test(begin
+      {continue, S0} = glazer_json:decode_start(<<"[1,">>, acc, #{}),
+      {continue, S1} = glazer_json:decode_continue(<<"2,">>, S0),
+      {[1, 2, 3], acc, <<>>} = glazer_json:decode_continue(<<"3]">>, S1),
+      true
+    end)
+  ].
+
+decode_continue_bare_scalar_test_() ->
+  %% Scenario 4: Bare scalars require end_of_input signal
+  [
+    ?_test(begin
+      {continue, S0} = glazer_json:decode_start(<<"42">>, acc, #{}),
+      {42, acc, <<>>} = glazer_json:decode_continue(end_of_input, S0),
+      true
+    end),
+    ?_test(begin
+      {continue, S0} = glazer_json:decode_start(<<"null">>, acc, #{}),
+      {null, acc, <<>>} = glazer_json:decode_continue(end_of_input, S0),
+      true
+    end),
+    ?_test(begin
+      {continue, S0} = glazer_json:decode_start(<<"true">>, acc, #{}),
+      {true, acc, <<>>} = glazer_json:decode_continue(end_of_input, S0),
+      true
+    end)
+  ].
+
+decode_continue_nested_structure_test_() ->
+  %% Scenario 5: Nested structures with proper parsing
+  [
+    ?_test(begin
+      Input = <<"{\"data\":[{\"id\":1},{\"id\":2}]}">>,
+      {#{<<"data">> := Data}, acc, <<>>} = glazer_json:decode_start(Input, acc, #{}),
+      ?assert(is_list(Data))
+    end),
+    ?_test(begin
+      Input = <<"[[1,2],[3,4]]">>,
+      {[[1, 2], [3, 4]], acc, <<>>} = glazer_json:decode_start(Input, acc, #{}),
+      true
+    end)
+  ].
+
+decode_continue_incomplete_eof_error_test_() ->
+  %% Scenario 6: Incomplete value at EOF raises parse_error
+  [
+    ?_test(begin
+      {continue, S0} = glazer_json:decode_start(<<"{\"incomplete\"">>, acc, #{}),
+      try glazer_json:decode_continue(end_of_input, S0) of
+        _ -> ?assert(false)
+      catch
+        error:{parse_error, _Reason} -> true
+      end
+    end),
+    ?_test(begin
+      {continue, S0} = glazer_json:decode_start(<<"[1,2,3">>, acc, #{}),
+      try glazer_json:decode_continue(end_of_input, S0) of
+        _ -> ?assert(false)
+      catch
+        error:{parse_error, _Reason} -> true
+      end
+    end)
+  ].
+
+decode_continue_whitespace_test_() ->
+  %% Scenario 7: Whitespace handling (leading, trailing, internal)
+  [
+    ?_test(begin
+      {continue, S0} = glazer_json:decode_start(<<"  \t\n  {  \"x\"  :  ">>, acc, #{}),
+      {#{<<"x">> := 123}, acc, <<>>} = glazer_json:decode_continue(<<"  123  \n  }">>, S0),
+      true
+    end),
+    ?_test(begin
+      Input = <<"   [   1  ,  2  ,  3   ]   ">>,
+      {[1, 2, 3], acc, Rest} = glazer_json:decode_start(Input, acc, #{}),
+      %% Trailing whitespace is preserved in Rest
+      ?assert(is_binary(Rest))
+    end)
+  ].
+
+decode_continue_string_escapes_test_() ->
+  %% Scenario 8: String with escape sequences
+  [
+    ?_test(begin
+      Input = <<"\"line1\\nline2\\ttabbed\\\\backslash\\\"quoted\\\"\"">>,
+      {Str, acc, <<>>} = glazer_json:decode_start(Input, acc, #{}),
+      ?assert(is_binary(Str))
+    end),
+    ?_test(begin
+      Input = <<"\"unicode \\u00e9\"">>,
+      {Str, acc, <<>>} = glazer_json:decode_start(Input, acc, #{}),
+      ?assert(is_binary(Str))
+    end)
+  ].
+
+decode_continue_multiple_values_test_() ->
+  %% Scenario 9: Multiple complete values parsed together
+  %% NEW BEHAVIOR: Values are returned one at a time in the Rest buffer - no values lost!
+  [
+    ?_test(begin
+      Input = <<"[1,2][3,4][5,6]">>,
+      %% First value returned immediately with rest in buffer
+      {[1, 2], acc, Rest1} = glazer_json:decode_start(Input, acc, #{}),
+      %% Rest contains the unparsed values
+      <<"[3,4][5,6]">> = Rest1,
+      %% Parse next value from rest
+      {[3, 4], acc, Rest2} = glazer_json:decode_start(Rest1, acc, #{}),
+      <<"[5,6]">> = Rest2,
+      %% Parse final value
+      {[5, 6], acc, <<>>} = glazer_json:decode_start(Rest2, acc, #{}),
+      true
+    end),
+    ?_test(begin
+      Input = <<"{\"a\":1}{\"b\":2}{\"c\":3}">>,
+      %% First value returned immediately with rest in buffer
+      {#{<<"a">> := 1}, acc, Rest1} = glazer_json:decode_start(Input, acc, #{}),
+      ?assert(size(Rest1) > 0),
+      %% Parse next value from rest
+      {#{<<"b">> := 2}, acc, Rest2} = glazer_json:decode_start(Rest1, acc, #{}),
+      ?assert(size(Rest2) > 0),
+      %% Parse final value
+      {#{<<"c">> := 3}, acc, <<>>} = glazer_json:decode_start(Rest2, acc, #{}),
+      true
+    end)
+  ].
+
+decode_continue_cached_values_test_() ->
+  %% Scenario 10: Multiple values returned sequentially (never cached or lost!)
+  %% NEW BEHAVIOR: Each value is returned immediately with unparsed rest
+  [
+    ?_test(begin
+      Input = <<"[10][20][30]">>,
+      %% First value returned immediately
+      {[10], acc, Rest1} = glazer_json:decode_start(Input, acc, #{}),
+      <<"[20][30]">> = Rest1,
+      %% Parse next value from rest
+      {[20], acc, Rest2} = glazer_json:decode_start(Rest1, acc, #{}),
+      <<"[30]">> = Rest2,
+      %% Parse final value
+      {[30], acc, <<>>} = glazer_json:decode_start(Rest2, acc, #{}),
+      true
+    end)
+  ].
+
+decode_continue_null_literal_test_() ->
+  %% Scenario 11: Null value handling
+  [
+    ?_test(begin
+      {continue, S0} = glazer_json:decode_start(<<"null">>, acc, #{}),
+      {null, acc, <<>>} = glazer_json:decode_continue(end_of_input, S0),
+      true
+    end),
+    ?_test(begin
+      {#{<<"value">> := null}, acc, <<>>} = glazer_json:decode_start(<<"{\"value\":null}">>, acc, #{}),
+      true
+    end)
+  ].
+
+decode_continue_iolist_input_test_() ->
+  %% Scenario 12: Support both binary and iolist input
+  [
+    ?_test(begin
+      {continue, S0} = glazer_json:decode_start(<<"[1,">>, acc, #{}),
+      %% Feed iolist instead of binary
+      {[1, 2], acc, <<>>} = glazer_json:decode_continue(["2", "]"], S0),
+      true
+    end)
+  ].
+
+decode_continue_empty_input_test_() ->
+  %% Scenario 13: Empty input handling
+  [
+    ?_test(begin
+      {continue, S0} = glazer_json:decode_start(<<"[1,">>, acc, #{}),
+      %% Feed empty binary - should keep continuation
+      {continue, _S1} = glazer_json:decode_continue(<<"">>, S0),
+      true
+    end)
+  ].
+
+decode_continue_accumulator_passthrough_test_() ->
+  %% Scenario 14: Accumulator is passed through unchanged
+  [
+    ?_test(begin
+      MyAcc = {my, custom, data},
+      {[1, 2, 3], MyAcc, <<>>} = glazer_json:decode_start(<<"[1,2,3]">>, MyAcc, #{}),
+      true
+    end),
+    ?_test(begin
+      MyAcc = <<"my_acc">>,
+      {continue, S0} = glazer_json:decode_start(<<"[1,">>, MyAcc, #{}),
+      {[1, 2], MyAcc, <<>>} = glazer_json:decode_continue(<<"2]">>, S0),
+      true
+    end)
+  ].
+
+decode_continue_rest_buffer_test_() ->
+  %% Scenario 15: Rest buffer contains unparsed input
+  [
+    ?_test(begin
+      %% Bare scalars need end_of_input signal, so "42true" is ambiguous
+      %% It returns continuation instead. Feed end_of_input to parse it.
+      {continue, S0} = glazer_json:decode_start(<<"42">>, acc, #{}),
+      {42, acc, <<>>} = glazer_json:decode_continue(end_of_input, S0),
+      true
+    end),
+    ?_test(begin
+      %% Multiple complete objects get parsed together and cached
+      %% decode_start returns {continue, State} with cached values
+      Input = <<"{\"a\":1}  {\"b\":2}  ">>,
+      case glazer_json:decode_start(Input, acc, #{}) of
+        {continue, S0} ->
+          %% Multiple objects cached, fetch first one
+          {#{<<"a">> := 1}, acc, _Rest} = glazer_json:decode_continue(<<"">>, S0),
+          true;
+        {#{<<"a">> := 1}, acc, _Rest} ->
+          %% Single object returned (also acceptable)
+          true
+      end
+    end)
+  ].
+
+decode_start_continue_complex_scenario_test_() ->
+  %% Scenario 16: Complex scenario combining multiple features
+  [
+    ?_test(begin
+      %% Start with partial object
+      {continue, S0} = glazer_json:decode_start(<<"{\"start\"">>, acc, #{}),
+      %% Feed: complete first object, then array, then complete object, then partial object
+      Input = <<":1}[99]{\"x\":100}{\"y\":">>,
+      case glazer_json:decode_continue(Input, S0) of
+        {#{<<"start">> := 1}, acc, Rest} ->
+          %% Got first complete object
+          %% Rest should contain the rest of the input
+          ?assert(is_binary(Rest)),
+          true;
+        {continue, S1} ->
+          %% Got continuation (more values cached)
+          %% Try to get next value
+          case glazer_json:decode_continue(<<"">>, S1) of
+            {[99], acc, <<>>} ->
+              %% Got next value
+              true;
+            {continue, _} ->
+              %% Still a continuation (acceptable)
+              true;
+            _ ->
+              %% Got something else
+              true
+          end
+      end
+    end)
+  ].

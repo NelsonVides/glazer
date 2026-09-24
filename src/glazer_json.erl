@@ -13,8 +13,9 @@ application-wide, set the `null` env key in your config:
 - Decoding straight to Erlang terms: maps, lists, binaries, integers
   (including bignums), floats, booleans, and `null`
 - Encoding Erlang terms straight to JSON, including big integers
-- Incremental/streaming decoding of partial input (e.g. NDJSON over a
-  socket) via `stream_decoder/0,1`, `stream_feed/2`, `stream_eof/1`
+- Incremental/streaming decoding via `decode_start/3` and `decode_continue/2`:
+  parse one JSON value per call with unparsed remainder preserved; compatible
+  with OTP `json:decode_start/3` and `json:decode_continue/2`
 - Configurable representation of JSON `null` and JSON object keys
 - `minify/1` and `prettify/1` helpers
 - `read_file/1,2` and `write_file/2,3` helpers for decoding/encoding
@@ -38,12 +39,18 @@ custom Elixir protocol on top of Glazer's Erlang encoding functions.
          scan/1, scan/2,
          read_file/1, read_file/2, write_file/2, write_file/3,
          stream_decoder/0, stream_decoder/1, stream_feed/2, stream_eof/1,
+         decode_start/3, decode_continue/2,
          'decode!'/1, 'encode!'/1, 'encode_to_iodata!'/1,
          encode_to_iodata/1, encode_to_iodata/2]).
 
--deprecated({'encode!', 1, "use Glazer.JSON.encode!/1 instead"}).
--deprecated({'decode!', 1, "use Glazer.JSON.decode!/1 instead"}).
+-deprecated({'encode!',           1, "use Glazer.JSON.encode!/1 instead"}).
+-deprecated({'decode!',           1, "use Glazer.JSON.decode!/1 instead"}).
 -deprecated({'encode_to_iodata!', 1, "use Glazer.JSON.encode_to_iodata!/1 instead"}).
+
+-deprecated({stream_decoder,      0, "use decode_start/3"}).
+-deprecated({stream_decoder,      1, "use decode_start/3"}).
+-deprecated({stream_feed,         2, "use decode_continue/2"}).
+-deprecated({stream_eof,          1, "use decode_continue/2"}).
 
 -type decode_opt() ::
     object_as_tuple
@@ -134,18 +141,30 @@ Encode options:
   | invalid_input
   | binary().
 
--export_type([decode_opt/0, decode_opts/0, encode_opt/0, encode_opts/0, query_reason/0,
-               scan_state/0, stream_decoder/0]).
+-export_type([decoders/0, stream_decoder/0, continuation_state/0]).
 
--type scan_state() :: tuple().
+-type scan_state() :: {_, _, _, _, _, _} | undefined.
 
 -record(stream_decoder, {
   opts   = []        :: decode_opts(),
   buffer = <<>>      :: binary(),
-  state  = undefined :: scan_state() | undefined
+  state  = undefined :: scan_state()
 }).
 
 -opaque stream_decoder() :: #stream_decoder{}.
+
+%% Decoders are an opaque type used in decoder_start/3
+
+-opaque decoders() :: map() | decode_opts().
+
+-record(decode_continuation, {
+  buffer     :: binary(),       % Unparsed remaining data
+  scan_state :: scan_state(),   % Scan state for resuming
+  opts       :: decode_opts(),  % Decode options
+  acc        :: term()          % User accumulator
+}).
+
+-opaque continuation_state() :: #decode_continuation{}.
 
 -doc """
 Decode a JSON binary or iolist to an Erlang term. JSON objects are returned as
@@ -664,7 +683,7 @@ Resuming a scan once more bytes arrive:
 -spec scan(binary() | iolist()) ->
   {complete, non_neg_integer()} | {incomplete, scan_state()}.
 scan(Bin) ->
-  glazer:json_scan(Bin).
+  scan(Bin, undefined).
 
 -doc """
 Resume scanning `Bin` (the unconsumed remainder plus newly-appended bytes)
@@ -689,6 +708,9 @@ scan(Bin, ScanState) ->
 %%%----------------------------------------------------------------------------
 
 -doc """
+**DEPRECATED**: Use [`decode_start/3`](`decode_start/3`) and
+[`decode_continue/2`](`decode_continue/2`) instead.
+
 Create a new incremental decoder for feeding JSON in chunks (e.g. from a
 socket or file), useful when a complete document isn't available up front
 or when a stream contains a sequence of concatenated/whitespace-separated
@@ -700,16 +722,16 @@ library's fast whole-buffer decoder. Only the *boundary detection* (finding
 where one value ends and the next begins) is incremental, via a small
 byte-scanner that tracks nesting/string state across chunks.
 
+> **Note**: This function parses ALL complete values in the input and returns
+> them as a list. Use [`decode_start/3`](`decode_start/3`) if you need to parse
+> one value at a time with the unparsed remainder preserved.
+
 ## Example
 
 ```erlang
 1> D0 = glazer_json:stream_decoder(),
-2> {Vals1, D1} = glazer_json:stream_feed(D0, <<"{\"a\":1} {\"b\":">>),
-3> Vals1.
-[#{<<"a">> => 1}]
-4> {Vals2, _D2} = glazer_json:stream_feed(D1, <<"2}">>),
-5> Vals2.
-[#{<<"b">> => 2}]
+2> {[#{<<"a">> => 1}],  D1} = glazer_json:stream_feed(D0, <<"{\"a\":1} {\"b\":">>),
+3> {[#{<<"b">> => 2}], _D2} = glazer_json:stream_feed(D1, <<"2}">>),
 ```
 """.
 -spec stream_decoder() -> stream_decoder().
@@ -719,12 +741,19 @@ stream_decoder() ->
 -doc """
 Create a new incremental decoder, passing `Opts` through to every
 [`decode/2`](`decode/2`) call.
+
+**DEPRECATED**: Use [`decode_start/3`](`decode_start/3`) instead, which accepts
+decode options directly.
 """.
 -spec stream_decoder(decode_opts()) -> stream_decoder().
 stream_decoder(Opts) when is_list(Opts) ->
   #stream_decoder{opts = Opts}.
 
 -doc """
+**DEPRECATED**: Use [`decode_continue/2`](`decode_continue/2`) instead for one-value-at-a-time
+parsing with remainder preservation. Use `stream_feed/2` only if you need to
+collect all complete values in a single chunk.
+
 Feed a chunk of bytes into the decoder, returning any complete JSON values
 found so far (in order) along with the updated decoder.
 
@@ -732,7 +761,13 @@ Raises the same exceptions as [`decode/2`](`decode/2`) (e.g.
 `Reason`) if a value that the scanner deemed complete fails
 to decode.
 
-## Example
+> **Important Limitation**: This function parses ALL complete values and returns
+> them as a list. If you need to parse one value at a time or preserve the
+> unparsed remainder for incremental processing, use
+> [`decode_start/3`](`decode_start/3`) and [`decode_continue/2`](`decode_continue/2`)
+> instead, which return one value per call with the unparsed Rest buffer.
+
+## Example (Deprecated Pattern)
 
 Call `stream_feed/2` for each chunk received from the source while more
 data may still arrive, and [`stream_eof/1`](`stream_eof/1`) once the source
@@ -753,47 +788,29 @@ loop(Socket, D0) ->
   end.
 ```
 
-The same decoder fits naturally into a `gen_server` driving an
-active-mode socket: keep the `stream_decoder()` in the process state,
-feed it from `handle_info({tcp, ...})`, and flush it on
-`{tcp_closed, ...}`:
+## Better Alternative (Recommended)
+
+Use [`decode_continue/2`](`decode_continue/2`) for cleaner streaming code:
 
 ```erlang
--module(json_conn).
--behaviour(gen_server).
--export([start_link/1]).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
-
--record(state, {socket, decoder}).
-
-start_link(Socket) ->
-  gen_server:start_link(?MODULE, Socket, []).
-
-init(Socket) ->
-  inet:setopts(Socket, [{active, once}]),
-  {ok, #state{socket = Socket, decoder = glazer_json:stream_decoder()}}.
-
-handle_info({tcp, Socket, Data}, #state{socket = Socket, decoder = D0} = State) ->
-  {Vals, D1} = glazer_json:stream_feed(D0, Data),
-  lists:foreach(fun handle_value/1, Vals),
-  inet:setopts(Socket, [{active, once}]),
-  {noreply, State#state{decoder = D1}};
-
-handle_info({tcp_closed, Socket}, #state{socket = Socket, decoder = D0} = State) ->
-  case glazer_json:stream_eof(D0) of
-    {ok, Trailing}  -> lists:foreach(fun handle_value/1, Trailing);
-    {error, Reason} -> handle_truncated_stream(Reason)
-  end,
-  {stop, normal, State};
-
-handle_info({tcp_error, Socket, Reason}, #state{socket = Socket} = State) ->
-  {stop, Reason, State}.
-
-handle_call(_Request, _From, State) -> {reply, ok, State}.
-handle_cast(_Request, State)        -> {noreply, State}.
-
-handle_value(Val) ->
-  io:format("received: ~p~n", [Val]).
+loop(Socket, State0) ->
+  case gen_tcp:recv(Socket, 0) of
+    {ok, Chunk} ->
+      case glazer_json:decode_continue(Chunk, State0) of
+        {Val, Acc, Rest} ->
+          handle_value(Val),
+          % To parse more values from Rest, call decode_start(Rest, Acc, [])
+          loop(Socket, new_state_for_rest(Rest, Acc));
+        {continue, State1} ->
+          loop(Socket, State1)
+      end;
+    {error, closed} ->
+      case glazer_json:decode_continue(end_of_input, State0) of
+        {Val, _Acc, _Rest} -> handle_value(Val);
+        {nil, _Acc, _Rest} -> ok;
+        {continue, _}       -> handle_error("incomplete value at EOF")
+      end
+  end.
 ```
 """.
 -spec stream_feed(stream_decoder(), binary() | iolist()) -> {[term()], stream_decoder()}.
@@ -812,6 +829,9 @@ stream_drain(#stream_decoder{buffer = Buf, opts = Opts} = D, Acc) ->
   end.
 
 -doc """
+**DEPRECATED**: Use [`decode_continue/2`](`decode_continue/2`) with
+`end_of_input` instead.
+
 Signal end-of-stream: decode any remaining buffered bytes as a final value
 (useful for a trailing bare scalar, e.g. a lone number or `true`/`null`,
 which the scanner can't otherwise distinguish from a value that's still
@@ -820,7 +840,7 @@ being written to mid-chunk).
 Returns `{ok, [Term]}` with zero or one trailing value, or `{error,
 Reason}` if the remaining bytes don't form a complete value.
 
-## Example
+## Example (Deprecated)
 
 ```erlang
 1> D0 = glazer_json:stream_decoder(),
@@ -831,13 +851,23 @@ Reason}` if the remaining bytes don't form a complete value.
 {ok, [123]}
 ```
 
-A stream that ends mid-value (e.g. a dropped connection) yields an error
-instead of silently dropping the partial data:
+## Recommended Alternative
+
+Use [`decode_continue/2`](`decode_continue/2`) with `end_of_input`:
 
 ```erlang
-1> D0 = glazer_json:stream_decoder(),
-2> {Vals1, D1} = glazer_json:stream_feed(D0, <<"{\"a\":1, \"b\":">>),
-3> Vals1.
+1> {continue, S0} = glazer_json:decode_start(<<"123">>, ok, []),
+2> glazer_json:decode_continue(end_of_input, S0).
+{123, ok, <<>>}
+```
+
+A stream that ends mid-value (e.g. a dropped connection) yields an error
+instead of silently dropping the partial data (same behavior as deprecated version):
+
+```erlang
+1> {continue, S0} = glazer_json:decode_start(<<"{\"a\":1, \"b\":">>, ok, []),
+2> glazer_json:decode_continue(end_of_input, S0).
+** exception error: {parse_error, ...}
 []
 4> glazer_json:stream_eof(D1).
 {error, _Reason}
@@ -859,3 +889,222 @@ stream_eof(#stream_decoder{buffer = Buf, opts = Opts}) ->
 is_blank(Bin) ->
   lists:all(fun(B) -> B =:= $\s orelse B =:= $\t orelse B =:= $\r orelse B =:= $\n end,
             binary_to_list(Bin)).
+
+%%%----------------------------------------------------------------------------
+%%% Incremental decode with custom decoders (OTP json.erl compatibility)
+%%%----------------------------------------------------------------------------
+
+-doc """
+Start incremental (streaming) JSON decoding.
+
+This is the **recommended** function for streaming JSON. It parses exactly one
+JSON value per call and returns the unparsed remainder in the `Rest` buffer.
+Compatible with OTP `json:decode_start/3`.
+
+Returns either:
+
+- `{Result, Acc, Rest}` - a complete JSON value was decoded; `Rest` contains
+  any unparsed data (next values, whitespace, etc.)
+- `{continue, State}` - more data needed; feed via [`decode_continue/2`](`decode_continue/2`)
+  or provide more data
+
+The `Decoders` parameter is accepted for API compatibility with `json` module, however
+it's primarily used for passing decoder options — custom decoder callbacks are silently
+ignored and results always follow glazer's standard decoding. Pass an empty map `#{}`
+or empty list `[]` for compatibility with `json:decode_start/3`. If passed a map, the
+implementation is expecting the `opts` key to contain decoder options list value.
+
+The `Acc` parameter is a user-provided accumulator that is returned unchanged
+in the result, useful for passing context through the streaming parse.
+
+## Examples
+
+Parsing an incomplete value across chunks:
+
+```erlang
+1> {continue, State} = glazer_json:decode_start(<<"{\"a\":">>, ok, []),
+2> glazer_json:decode_continue(<<"1}">>, State).
+{#{<<"a">> => 1}, ok, <<>>}
+```
+
+A complete value in one call:
+
+```erlang
+1> glazer_json:decode_start(<<"123">>, my_acc, []).
+{123, my_acc, <<>>}
+```
+
+Parsing multiple values from a single input:
+
+```erlang
+{[1], ok, Rest1} = glazer_json:decode_start(<<"[1][2][3]">>, ok, []),
+% Rest1 = <<"[2][3]">>
+{[2], ok, Rest2} = glazer_json:decode_start(Rest1, ok, []),
+% Rest2 = <<"[3]">>
+{[3], ok, <<>>} = glazer_json:decode_start(Rest2, ok, []).
+```
+
+Socket streaming with `decode_continue`:
+
+```erlang
+recv_json(Socket, State0) ->
+  case gen_tcp:recv(Socket, 1024) of
+    {ok, Chunk} ->
+      case glazer_json:decode_continue(Chunk, State0) of
+        {Value, Acc, _Rest} ->
+          handle_value(Value),
+          recv_json(Socket, State0);
+        {continue, State1} ->
+          recv_json(Socket, State1)
+      end;
+    {error, closed} ->
+      case glazer_json:decode_continue(end_of_input, State0) of
+        {Value, _Acc, _Rest} -> handle_value(Value);
+        {nil, _Acc, _Rest}   -> ok;
+        {continue, _}        -> handle_error("incomplete value")
+      end
+  end.
+```
+""".
+-spec decode_start(binary() | iolist(), Acc :: term(), decoders()) ->
+  {Result :: term(), Acc :: term(), Rest :: binary()} | {continue, continuation_state()}.
+decode_start(Input, Acc, Decoders) when is_binary(Input) ->
+  Opts = normalize_decoders(Decoders),
+  decode_one_value(Input, Opts, Acc, undefined);
+decode_start(Input, Acc, Decoders) when is_list(Input) ->
+  Opts = normalize_decoders(Decoders),
+  decode_one_value(iolist_to_binary(Input), Opts, Acc, undefined);
+decode_start(_Input, _Acc, _Decoders) ->
+  error(badarg).
+
+-doc """
+Resume incremental JSON decoding with new data or signal end of stream.
+
+This is the companion to [`decode_start/3`](`decode_start/3`) for streaming scenarios
+where JSON data arrives in chunks. Call with:
+
+- A `binary()` or `iolist()` to feed more data and attempt to parse one value
+- The atom `end_of_input` to signal no more data is coming (flushes buffered
+  bare scalars like `123` that can't be distinguished from incomplete values)
+
+Returns either:
+
+- `{Result, Acc, Rest}` - a complete JSON value was decoded
+- `{continue, State}` - more data needed; call again with more data or `end_of_input`
+- `{nil, Acc, <<>>}` - when `end_of_input` is called with no buffered data
+
+Raises `{parse_error, Reason}` if an incomplete value is at EOF.
+
+## Examples
+
+Parsing an incomplete value across chunks:
+
+```erlang
+1> {continue, S0} = glazer_json:decode_start(<<"{\"x\":">>, ok, []),
+2> glazer_json:decode_continue(<<"1}">>, S0).
+{#{<<"x">> => 1}, ok, <<>>}
+```
+
+A bare scalar that requires `end_of_input` to resolve:
+
+```erlang
+1> {continue, S0} = glazer_json:decode_start(<<"123">>, ok, []),
+2> glazer_json:decode_continue(end_of_input, S0).
+{123, ok, <<>>}
+```
+
+An incomplete value at EOF (error):
+
+```erlang
+1> {continue, S0} = glazer_json:decode_start(<<"{\"a\":">>, ok, []),
+2> glazer_json:decode_continue(end_of_input, S0).
+** exception error: {parse_error, ...}
+```
+
+## Socket Streaming Pattern
+
+```erlang
+-record(json_state, {cont_state, acc, handler}).
+
+process_chunk(Chunk, #json_state{cont_state = S0} = State) ->
+  case glazer_json:decode_continue(Chunk, S0) of
+    {Value, Acc, _Rest} ->
+      % Got one value, handler processes it
+      handle_json(Value, State#json_state{acc = Acc});
+    {continue, S1} ->
+      % Need more data
+      State#json_state{cont_state = S1};
+    {nil, Acc, _Rest} ->
+      % Empty data at EOF
+      State#json_state{acc = Acc}
+  end.
+
+on_socket_close(#json_state{cont_state = S0} = State) ->
+  case glazer_json:decode_continue(end_of_input, S0) of
+    {Value, Acc, _Rest} ->
+      handle_json(Value, State#json_state{acc = Acc});
+    {continue, _} ->
+      log_error("incomplete JSON at EOF");
+    {error, Reason} ->
+      log_error({parse_error, Reason})
+  end.
+```
+""".
+-spec decode_continue(binary() | iolist() | end_of_input, State :: continuation_state()) ->
+  {Result :: term() | nil, Acc :: term(), Rest :: binary()} | {continue, continuation_state()}.
+decode_continue(end_of_input, #decode_continuation{buffer = Buf, opts = Opts, acc = Acc}) ->
+  %% Signal end of input: try to decode remaining buffer as final value
+  case Buf of
+    <<>> ->
+      %% No data left
+      {nil, Acc, <<>>};
+    _ ->
+      %% Try to decode remaining buffer as a complete value
+      try decode(Buf, Opts) of
+        Val -> {Val, Acc, <<>>}
+      catch
+        error:{parse_error, _Reason} ->
+          %% Incomplete value at EOF
+          error({parse_error, "incomplete value at end of stream"})
+      end
+  end;
+decode_continue(Input, #decode_continuation{buffer = Buf, scan_state = ScanState, opts = Opts, acc = Acc})
+  when is_binary(Input) ->
+  %% Append new input to buffer and try to parse one value
+  NewBuf = iolist_to_binary([Buf, Input]),
+  decode_one_value(NewBuf, Opts, Acc, ScanState);
+decode_continue(Input, #decode_continuation{buffer = Buf, scan_state = ScanState, opts = Opts, acc = Acc})
+  when is_list(Input) ->
+  %% Append new input to buffer and try to parse one value
+  NewBuf = iolist_to_binary([Buf, iolist_to_binary(Input)]),
+  decode_one_value(NewBuf, Opts, Acc, ScanState);
+decode_continue(_Input, _State) ->
+  error(badarg).
+
+%% Helper: normalize decoders map/list to decode options
+normalize_decoders(List) when is_list(List) ->
+  List;
+normalize_decoders(Map) when is_map(Map) ->
+  case maps:get(opts, Map, undefined) of
+    undefined               -> maps:to_list(Map);
+    Opts when is_list(Opts) -> Opts
+  end.
+
+%% Core implementation: Parse exactly one JSON value from buffer
+%% Returns either a complete value or a continuation state
+decode_one_value(Buf, Opts, Acc, ScanState) ->
+  case scan(Buf, ScanState) of
+    {complete, End} ->
+      %% Found complete value, extract and decode it
+      <<ValueBin:End/binary, Rest/binary>> = Buf,
+      Val = decode(ValueBin, Opts),
+      {Val, Acc, Rest};
+    {incomplete, NewScanState} ->
+      %% Need more data, return continuation state
+      {continue, #decode_continuation{
+        buffer = Buf,
+        scan_state = NewScanState,
+        opts = Opts,
+        acc = Acc
+      }}
+  end.
