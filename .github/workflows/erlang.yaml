@@ -20,8 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     name: OTP ${{ matrix.otp }} ${{ matrix.os }}.${{ matrix.compiler.compiler }}
 
-    container:
-      image: erlang:${{matrix.otp}}
+    #container:
+    #  image: erlang:${{matrix.otp}}
 
     strategy:
       fail-fast: false
@@ -32,6 +32,7 @@ jobs:
           - { compiler: GNU-12,  CC: gcc-12,   CXX: g++-12 }
           - { compiler: LLVM-19, CC: clang-19, CXX: clang++-19 }
         otp: [27, 28, 29]
+        elixir: ["1.20"]
         exclude:
           # GCC 14 and clang 19 are only available in OTP 28 (Debian Bookworm+)
           - { otp: 27, compiler: { compiler: GNU-14 } }
@@ -41,7 +42,12 @@ jobs:
           - { otp: 29, compiler: { compiler: GNU-12 } }
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ matrix.elixir }}
+          otp-version:    ${{ matrix.otp }}
+
       - name: OTP Version
         run:  erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell -noinput;
       - name: Fix Ownership
@@ -101,12 +107,14 @@ jobs:
         compiler:
           - { compiler: XCode, CC: cc, CXX: c++ }
         otp: [27, 28, 29]
+        elixir: ["1.20"]
     steps:
       - uses: actions/checkout@v2
       - name: Install Erlang/OTP
         uses: erlef/setup-beam@v1
         with:
           otp-version: ${{ matrix.otp }}
+          elixir-version: ${{ matrix.elixir }}
           rebar3-version: '3'
       - name: OTP Version
         run:  erl -eval '{ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("Version=~s\n", [Version]), halt().' -noshell -noinput;
@@ -146,6 +154,7 @@ jobs:
       fail-fast: false
       matrix:
         otp: [27, 28, 29]
+        elixir: ["1.20"]
 
     steps:
       - uses: actions/checkout@v2
@@ -153,6 +162,7 @@ jobs:
         uses: erlef/setup-beam@v1
         with:
           otp-version: ${{ matrix.otp }}
+          elixir-version: ${{ matrix.elixir }}
           rebar3-version: '3'
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
